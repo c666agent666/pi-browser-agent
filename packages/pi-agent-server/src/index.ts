@@ -62,6 +62,12 @@ const server = Bun.serve<WsData>({
 					type: "connected",
 					payload: { sessionId: session.sessionId, resumed: session.resumed },
 				});
+
+				// On resume, replay the conversation so the panel can render it.
+				if (session.resumed) {
+					const history = await manager.history(session.sessionId);
+					sendSafe(ws, { type: "history", payload: { messages: history } });
+				}
 			} catch (error) {
 				console.error("[ws] session setup failed:", error);
 				sendSafe(ws, {

@@ -1,20 +1,19 @@
 {
   "name": "Pi Browser Agent",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "manifest_version": 3,
-  "description": "Side panel for Pi coding agent with browser integration, screenshots, and vision",
+  "description": "Pi coding agent in a terminal side panel — chat, browser control, screenshots, vision",
   "icons": {
-    "16": "public/icon.svg",
-    "48": "public/icon.svg",
-    "128": "public/icon.svg"
+    "16": "icon-16.png",
+    "48": "icon-48.png",
+    "128": "icon-128.png"
   },
   "permissions": [
     "sidePanel",
     "activeTab",
     "scripting",
     "storage",
-    "tabs",
-    "webNavigation"
+    "tabs"
   ],
   "host_permissions": [
     "http://127.0.0.1:3848/*",
@@ -22,27 +21,21 @@
     "<all_urls>"
   ],
   "background": {
-    "service_worker": "background/index.js",
+    "service_worker": "src/background/index.ts",
     "type": "module"
   },
   "side_panel": {
-    "default_path": "sidepanel/index.html"
+    "default_path": "src/sidepanel/index.html"
   },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content/index.js"],
+      "js": ["src/content/index.ts"],
       "run_at": "document_idle",
       "all_frames": false
     }
   ],
-  "web_accessible_resources": [
-    {
-      "resources": ["assets/*"],
-      "matches": ["<all_urls>"]
-    }
-  ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' http://127.0.0.1:3848 ws://127.0.0.1:3848"
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http://127.0.0.1:3848 ws://127.0.0.1:3848"
   }
 }

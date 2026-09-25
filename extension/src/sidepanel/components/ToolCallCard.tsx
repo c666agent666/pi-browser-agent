@@ -1,54 +1,35 @@
 import React, { useState } from "react";
 import type { ToolCall } from "../types";
+import { colors, font } from "../theme";
 
-interface ToolCallCardProps {
-  toolCall: ToolCall;
-}
-
-export function ToolCallCard({ toolCall }: ToolCallCardProps) {
+export function ToolCallCard({ toolCall }: { toolCall: ToolCall }) {
   const [expanded, setExpanded] = useState(false);
+  const done = toolCall.status !== "running";
+  const failed = toolCall.status === "failed";
 
-  const statusColors: Record<ToolCall["status"], string> = {
-    running: "#58a6ff",
-    completed: "#238636",
-    failed: "#da3633",
-  };
-
-  const statusIcons: Record<ToolCall["status"], string> = {
-    running: "⚙",
-    completed: "✓",
-    failed: "✕",
-  };
+  const marker = failed ? "✗" : done ? "✓" : "·";
+  const markerColor = failed ? colors.red : done ? colors.greenDim : colors.green;
 
   return (
-    <div
-      style={{
-        ...styles.card,
-        borderColor: statusColors[toolCall.status],
-      }}
-    >
+    <div style={styles.card}>
       <div style={styles.header} onClick={() => setExpanded(!expanded)}>
-        <span style={styles.icon}>{statusIcons[toolCall.status]}</span>
-        <span style={{ ...styles.name, color: statusColors[toolCall.status] }}>{toolCall.name}</span>
-        <span style={styles.toggle}>{expanded ? "▲" : "▼"}</span>
+        <span style={{ ...styles.marker, color: markerColor }}>{marker}</span>
+        <span style={styles.toolName}>{toolCall.name}</span>
+        <span style={styles.argsPreview}>
+          {previewArgs(toolCall.args)}
+        </span>
+        <span style={styles.chevron}>{expanded ? "▲" : "▼"}</span>
       </div>
-
       {expanded && (
         <div style={styles.body}>
-          <div style={styles.argsTitle}>Arguments</div>
-          <pre style={styles.args}>{JSON.stringify(toolCall.args, null, 2)}</pre>
-
+          <div style={styles.sectionLabel}>args</div>
+          <pre style={styles.pre}>{safeJson(toolCall.args)}</pre>
           {toolCall.result !== undefined && (
             <>
-              <div style={styles.resultTitle}>Result</div>
-              <pre style={styles.result}>{formatResult(toolCall.result)}</pre>
-            </>
-          )}
-
-          {toolCall.error && (
-            <>
-              <div style={styles.errorTitle}>Error</div>
-              <pre style={styles.error}>{toolCall.error}</pre>
+              <div style={styles.sectionLabel}>{failed ? "error" : "result"}</div>
+              <pre style={{ ...styles.pre, color: failed ? colors.red : colors.green }}>
+                {formatResult(toolCall.result, failed)}
+              </pre>
             </>
           )}
         </div>
@@ -57,76 +38,58 @@ export function ToolCallCard({ toolCall }: ToolCallCardProps) {
   );
 }
 
-function formatResult(result: unknown): string {
-  if (typeof result === "string") return result;
+function previewArgs(args: Record<string, unknown>): string {
+  const entries = Object.entries(args ?? {});
+  if (entries.length === 0) return "";
+  const [key, value] = entries[0];
+  const text = typeof value === "string" ? value : safeJson(value);
+  return `${key}=${text.slice(0, 60)}${text.length > 60 ? "…" : ""}`;
+}
+
+function safeJson(value: unknown): string {
   try {
-    return JSON.stringify(result, null, 2);
+    return JSON.stringify(value, null, 2) ?? String(value);
   } catch {
-    return String(result);
+    return String(value);
   }
 }
 
+function formatResult(result: unknown, failed: boolean): string {
+  if (result === undefined) return "(no result)";
+  if (typeof result === "string") return failed ? result : truncate(result, 2000);
+  return truncate(safeJson(result), 2000);
+}
+
+function truncate(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max)}\n… [truncated]` : text;
+}
+
 const styles: Record<string, React.CSSProperties> = {
-  card: {
-    background: "#0d1117",
-    border: "1px solid",
-    borderRadius: "8px",
-    overflow: "hidden",
-    fontSize: "12px",
-  },
+  card: { borderLeft: `1px solid ${colors.border}`, paddingLeft: 8 },
   header: {
     display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    padding: "8px 10px",
+    alignItems: "baseline",
+    gap: 6,
     cursor: "pointer",
-    background: "rgba(255,255,255,0.02)",
+    padding: "1px 0",
+    fontSize: font.sizeSmall,
   },
-  icon: { fontSize: "14px" },
-  name: { fontWeight: 600, textTransform: "capitalize", fontSize: "12px" },
-  desc: { fontSize: "11px", color: "#8b949e", flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
-  toggle: { color: "#8b949e", fontSize: "10px" },
-  body: { padding: "0 10px 10px", borderTop: "1px solid #21262d", fontSize: "11px" },
-  argsTitle: { color: "#8b949e", fontSize: "10px", textTransform: "uppercase", marginTop: "8px" },
-  args: {
-    background: "#0d1117",
-    border: "1px solid #21262d",
-    borderRadius: "4px",
-    padding: "8px",
-    margin: "4px 0",
+  marker: { width: 12, fontFamily: font.mono },
+  toolName: { color: colors.blue, fontWeight: 600 },
+  argsPreview: { color: colors.dim, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  chevron: { color: colors.faint, fontSize: font.sizeTiny },
+  body: { padding: "4px 0 6px" },
+  sectionLabel: { color: colors.faint, fontSize: font.sizeTiny, textTransform: "uppercase", marginBottom: 2 },
+  pre: {
+    margin: 0,
+    padding: 6,
+    background: colors.bgPanel,
+    border: `1px solid ${colors.border}`,
+    color: colors.white,
+    fontSize: font.sizeTiny,
     overflow: "auto",
-    maxHeight: "200px",
-    color: "#e6edf3",
-    fontFamily: "monospace",
-    fontSize: "10px",
-    lineHeight: 1.5,
-  },
-  resultTitle: { color: "#8b949e", fontSize: "10px", textTransform: "uppercase", marginTop: "8px" },
-  result: {
-    background: "#0d1117",
-    border: "1px solid #21262d",
-    borderRadius: "4px",
-    padding: "8px",
-    margin: "4px 0",
-    overflow: "auto",
-    maxHeight: "300px",
-    color: "#7ee787",
-    fontFamily: "monospace",
-    fontSize: "10px",
-    lineHeight: 1.5,
-  },
-  errorTitle: { color: "#da3633", fontSize: "10px", textTransform: "uppercase", marginTop: "8px" },
-  error: {
-    background: "#3d0d0d",
-    border: "1px solid #da3633",
-    borderRadius: "4px",
-    padding: "8px",
-    margin: "4px 0",
-    overflow: "auto",
-    maxHeight: "200px",
-    color: "#f85149",
-    fontFamily: "monospace",
-    fontSize: "10px",
-    lineHeight: 1.5,
+    maxHeight: 180,
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
   },
 };

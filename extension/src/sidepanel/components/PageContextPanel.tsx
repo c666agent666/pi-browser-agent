@@ -1,85 +1,96 @@
 import React from "react";
 import type { PageContextSummary } from "../types";
+import { colors, font } from "../theme";
 
-interface PageContextPanelProps {
+export function PageContextPanel({
+  context,
+  onClose,
+}: {
   context: PageContextSummary | null;
   onClose: () => void;
-}
-
-export function PageContextPanel({ context, onClose }: PageContextPanelProps) {
-  if (!context) return null;
-
+}) {
   return (
     <div style={styles.panel}>
       <div style={styles.header}>
-        <span style={styles.title}>📄 Page Context</span>
-        <button onClick={onClose} style={styles.closeBtn} aria-label="Close">
-          ✕
+        <span style={{ color: colors.green }}>┌ page context</span>
+        <button onClick={onClose} style={styles.close}>
+          [x]
         </button>
       </div>
       <div style={styles.content}>
-        <div style={styles.section}>
-          <div style={styles.label}>URL</div>
-          <div style={styles.value}>{context.url}</div>
-        </div>
-        <div style={styles.section}>
-          <div style={styles.label}>Title</div>
-          <div style={styles.value}>{context.title}</div>
-        </div>
-        {context.selection && (
-          <div style={styles.section}>
-            <div style={styles.label}>Selection</div>
-            <pre style={styles.selection}>{context.selection}</pre>
-          </div>
-        )}
-        {context.viewport && (
-          <div style={styles.section}>
-            <div style={styles.label}>Viewport</div>
-            <div style={styles.value}>
-              {context.viewport.width}×{context.viewport.height} @ scroll({context.viewport.scrollX}, {context.viewport.scrollY})
-            </div>
-          </div>
-        )}
-        {context.meta && (
-          <div style={styles.section}>
-            <div style={styles.label}>Meta Tags</div>
-            {Object.entries(context.meta).map(([k, v]) => (
-              <div key={k} style={styles.metaRow}>
-                <span style={styles.metaKey}>{k}</span>
-                <span style={styles.metaValue}>{v}</span>
-              </div>
-            ))}
-          </div>
-        )}
-        {context.domSnapshot && (
-          <div style={styles.section}>
-            <div style={styles.label}>DOM Snapshot (truncated)</div>
-            <pre style={styles.domSnapshot}>{context.domSnapshot.slice(0, 3000)}…</pre>
-          </div>
+        {!context && <div style={styles.empty}>no content script on this page (chrome:// etc.)</div>}
+        {context && (
+          <>
+            <Field label="url" value={context.url} />
+            <Field label="title" value={context.title} />
+            {context.selection?.trim() && <Field label="selection" value={context.selection} pre />}
+            {context.viewport && (
+              <Field
+                label="viewport"
+                value={`${context.viewport.width}×${context.viewport.height} @ (${context.viewport.scrollX}, ${context.viewport.scrollY})`}
+              />
+            )}
+            {context.meta && Object.keys(context.meta).length > 0 && (
+              <Field label="meta" value={Object.entries(context.meta).map(([k, v]) => `${k}: ${v}`).join("\n")} pre />
+            )}
+            {context.domSnapshot && (
+              <Field label="dom" value={context.domSnapshot.slice(0, 2000)} pre />
+            )}
+          </>
         )}
       </div>
     </div>
   );
 }
 
+function Field({ label, value, pre }: { label: string; value: string; pre?: boolean }) {
+  const Tag = pre ? "pre" : "div";
+  return (
+    <div style={styles.field}>
+      <div style={styles.label}>{label}</div>
+      <Tag style={pre ? styles.preValue : styles.value}>{value}</Tag>
+    </div>
+  );
+}
+
 const styles: Record<string, React.CSSProperties> = {
   panel: {
-    borderBottom: "1px solid #30363d",
-    background: "#161b22",
-    maxHeight: "40vh",
+    borderBottom: `1px solid ${colors.borderBright}`,
+    background: colors.bgPanel,
+    maxHeight: "45vh",
     display: "flex",
     flexDirection: "column",
   },
-  header: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px" },
-  title: { fontSize: "13px", fontWeight: 600, color: "#e6edf3" },
-  closeBtn: { background: "none", border: "none", color: "#8b949e", cursor: "pointer", fontSize: "16px", padding: "0 4px", lineHeight: 1 },
-  content: { padding: "0 12px 12px", overflow: "auto", flex: 1 },
-  section: { marginBottom: "12px" },
-  label: { fontSize: "10px", textTransform: "uppercase", color: "#8b949e", marginBottom: "4px" },
-  value: { fontSize: "12px", color: "#e6edf3", wordBreak: "break-all", fontFamily: "monospace" },
-  selection: { fontSize: "11px", color: "#a5d6ff", background: "#0d1117", padding: "8px", borderRadius: "4px", border: "1px solid #21262d", maxHeight: "100px", overflow: "auto" },
-  metaRow: { display: "flex", gap: "8px", fontSize: "11px", padding: "2px 0" },
-  metaKey: { color: "#8b949e", minWidth: "100px" },
-  metaValue: { color: "#e6edf3", wordBreak: "break-all", flex: 1 },
-  domSnapshot: { fontSize: "10px", color: "#8b949e", background: "#0d1117", padding: "8px", borderRadius: "4px", border: "1px solid #21262d", maxHeight: "200px", overflow: "auto", lineHeight: 1.4 },
+  header: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: "5px 10px",
+    fontSize: font.sizeSmall,
+  },
+  close: {
+    background: "transparent",
+    border: "none",
+    color: colors.dim,
+    cursor: "pointer",
+    fontFamily: font.mono,
+    fontSize: font.sizeTiny,
+  },
+  content: { padding: "0 10px 10px", overflow: "auto" },
+  empty: { color: colors.faint, fontSize: font.sizeSmall },
+  field: { marginBottom: 8 },
+  label: { color: colors.greenDim, fontSize: font.sizeTiny, textTransform: "uppercase", marginBottom: 2 },
+  value: { color: colors.white, fontSize: font.sizeSmall, wordBreak: "break-all" },
+  preValue: {
+    color: colors.dim,
+    fontSize: font.sizeTiny,
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
+    background: colors.bg,
+    border: `1px solid ${colors.border}`,
+    padding: 6,
+    maxHeight: 140,
+    overflow: "auto",
+    margin: 0,
+  },
 };

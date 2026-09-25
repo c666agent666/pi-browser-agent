@@ -39,7 +39,7 @@ export function bridgeEvents(rawEvent: unknown): ServerMessage[] {
 					payload: {
 						messageId,
 						delta: streamEvent.delta,
-						text: extractText(streamEvent.partial),
+						text: messageText(streamEvent.partial),
 					},
 				});
 			} else if (streamEvent.type === "thinking_delta" && typeof streamEvent.delta === "string") {
@@ -113,8 +113,8 @@ export function bridgeEvents(rawEvent: unknown): ServerMessage[] {
 	return frames;
 }
 
-/** Extract plain text from an assistant message whose content may be a string or content blocks. */
-function extractText(partial: unknown): string {
+/** Extract plain text from an agent message (content may be a string or content blocks). */
+export function messageText(partial: unknown): string {
 	if (partial === null || partial === undefined) return "";
 	if (typeof partial === "string") return partial;
 

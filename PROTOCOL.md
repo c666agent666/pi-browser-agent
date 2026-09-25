@@ -38,6 +38,7 @@ and is mirrored in `extension/src/sidepanel/types.ts` — keep both in sync.
 |---|---|
 | `connected` | Session established; `resumed` flags whether history survived. |
 | `response` + `requestId` | Request ack/completion (e.g. `{ accepted: true }`). |
+| `history` | Replayed conversation after a resume: `{ messages: [{ id, role, text }] }` (user/assistant text only, last 100). |
 | `assistant_token` | Streaming assistant text: `delta` (increment) and `text` (cumulative). |
 | `thinking_token` | Streaming reasoning text (increment only). |
 | `tool_call` | Tool activity: `{ id, name, args, status: running|completed|failed }`. Emitted on both `toolcall_end` (planned call) and `tool_execution_start/end`. |

@@ -109,9 +109,22 @@ export function usePiAgent(): PiAgentApi {
         localStorage.setItem(STORAGE_KEY, frame.payload.sessionId);
         setConnected(true);
         if (!frame.payload.resumed) {
-          // Fresh subprocess — previous history is gone.
+          // Fresh conversation — no session file to replay.
           setMessages([]);
         }
+        break;
+      }
+
+      case "history": {
+        // Replayed conversation after resume — replace local state.
+        setMessages(
+          frame.payload.messages.map(m => ({
+            id: m.id,
+            role: m.role,
+            content: m.text,
+            timestamp: 0,
+          })),
+        );
         break;
       }
 

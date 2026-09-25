@@ -60,6 +60,7 @@ export type ServerMessage =
   | { type: "tool_call"; payload: { id: string; name: string; args: Record<string, unknown>; status: "running" | "completed" | "failed" } }
   | { type: "tool_result"; payload: { id: string; name: string; result: unknown; isError: boolean } }
   | { type: "turn_end"; payload: { messageId: string } }
+  | { type: "history"; payload: { messages: Array<{ id: string; role: "user" | "assistant"; text: string }> } }
   | { type: "screenshot_result"; requestId: string; payload: Screenshot }
   | { type: "vision_result"; requestId: string; payload: { analysis: string; model: string } }
   | { type: "pong" };

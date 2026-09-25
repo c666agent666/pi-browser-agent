@@ -132,6 +132,11 @@ export interface ApprovalRequestFrame {
 	payload: { callId: string; tool: string; args: Record<string, unknown> };
 }
 
+export interface HistoryFrame {
+	type: "history";
+	payload: { messages: Array<{ id: string; role: "user" | "assistant"; text: string }> };
+}
+
 export type ServerMessage =
 	| ConnectedFrame
 	| ResponseFrame
@@ -144,7 +149,8 @@ export type ServerMessage =
 	| ScreenshotResultFrame
 	| VisionResultFrame
 	| PongFrame
-	| ApprovalRequestFrame;
+	| ApprovalRequestFrame
+	| HistoryFrame;
 
 // ─── Shared payloads ───────────────────────────────────────────────────────
 

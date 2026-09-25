@@ -11,16 +11,10 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
-    rollupOptions: {
-      input: {
-        sidepanel: "src/sidepanel/index.html",
-        background: "src/background/index.ts",
-        content: "src/content/index.ts",
-      },
-    },
   },
   server: {
     port: 5173,
+    strictPort: true,
     hmr: { port: 5174 },
   },
 });
