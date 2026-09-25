@@ -1,0 +1,19 @@
+{
+  "name": "@pi-browser/agent-server",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "bun --watch src/server/index.ts",
+    "build": "bun build src/server/index.ts --outdir dist --target=bun",
+    "start": "bun dist/index.js"
+  },
+  "dependencies": {
+    "@oh-my-pi/pi-coding-agent": "workspace:*",
+    "@oh-my-pi/pi-utils": "workspace:*",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.12"
+  }
+}

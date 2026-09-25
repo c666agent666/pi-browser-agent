@@ -1,0 +1,20 @@
+{
+  "name": "pi-browser-agent",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "extension"
+  ],
+  "scripts": {
+    "dev:server": "bun --watch packages/pi-agent-server/src/server/index.ts",
+    "dev:extension": "cd extension && bun run dev",
+    "build:extension": "cd extension && bun run build",
+    "build:server": "bun build packages/pi-agent-server/src/server/index.ts --outdir packages/pi-agent-server/dist --target=bun",
+    "start": "bun packages/pi-agent-server/dist/index.js"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.5.0"
+  }
+}
