@@ -7,11 +7,11 @@
     "extension"
   ],
   "scripts": {
-    "dev:server": "bun --watch packages/pi-agent-server/src/server/index.ts",
+    "dev:server": "bun --watch packages/pi-agent-server/src/index.ts",
     "dev:extension": "cd extension && bun run dev",
     "build:extension": "cd extension && bun run build",
-    "build:server": "bun build packages/pi-agent-server/src/server/index.ts --outdir packages/pi-agent-server/dist --target=bun",
-    "start": "bun packages/pi-agent-server/dist/index.js"
+    "check": "bunx tsc --noEmit -p packages/pi-agent-server",
+    "start": "bun packages/pi-agent-server/src/index.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",

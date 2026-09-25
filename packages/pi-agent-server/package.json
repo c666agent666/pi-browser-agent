@@ -4,16 +4,18 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "bun --watch src/server/index.ts",
-    "build": "bun build src/server/index.ts --outdir dist --target=bun",
-    "start": "bun dist/index.js"
+    "dev": "bun --watch src/index.ts",
+    "build": "bun build src/index.ts --outdir dist --target=bun",
+    "start": "bun dist/index.js",
+    "check": "bunx tsc --noEmit"
   },
   "dependencies": {
-    "@oh-my-pi/pi-coding-agent": "workspace:*",
-    "@oh-my-pi/pi-utils": "workspace:*",
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "@types/ws": "^8.5.12"
+    "@types/bun": "^1.4.2",
+    "@types/node": "^26.6.2",
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.5.0"
   }
 }

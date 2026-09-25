@@ -1,282 +1,300 @@
+/**
+ * usePiAgent — owns the WebSocket connection to the server.
+ *
+ * Deliberately NOT routed through the MV3 service worker: Chrome
+ * terminates idle workers after ~30s, which would keep killing the
+ * socket. The side panel's lifetime matches the connection lifetime.
+ */
+
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Message, ToolCall, PageContext, Screenshot, PendingApproval, ServerMessage } from "../types";
+import type { ClientMessage, Message, PageContextSummary, ServerMessage, ToolCall } from "../types";
 
 const WS_URL = "ws://127.0.0.1:3848/ws";
-const HTTP_URL = "http://127.0.0.1:3848";
+const STORAGE_KEY = "pi-agent-session-id";
 
-interface UsePiAgentReturn {
-  connected: boolean;
-  sessionId: string | null;
-  messages: Message[];
-  pendingApproval: PendingApproval | null;
-  pageContext: PageContext | null;
-  screenshot: Screenshot | null;
-  sendMessage: (text: string) => Promise<void>;
-  approveTool: (callId: string) => Promise<void>;
-  denyTool: (callId: string) => Promise<void>;
-  requestPageContext: () => Promise<void>;
-  requestScreenshot: () => Promise<void>;
-  requestVision: (dataUrl: string, prompt: string) => Promise<string>;
-  clearSession: () => void;
+interface PendingRequest {
+  resolve: (value: unknown) => void;
+  reject: (error: Error) => void;
+  timeout: ReturnType<typeof setTimeout>;
 }
 
-export function usePiAgent(): UsePiAgentReturn {
+export interface PiAgentApi {
+  connected: boolean;
+  sessionId: string | null;
+  streaming: boolean;
+  messages: Message[];
+  sendMessage: (text: string, context?: PageContextSummary) => Promise<void>;
+  abort: () => Promise<void>;
+  newSession: () => Promise<void>;
+  requestScreenshot: (url?: string) => Promise<void>;
+  requestVision: (image: string, prompt: string, model?: string) => Promise<string>;
+  clearMessages: () => void;
+}
+
+export function usePiAgent(): PiAgentApi {
   const [connected, setConnected] = useState(false);
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [streaming, setStreaming] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
-  const [pageContext, setPageContext] = useState<PageContext | null>(null);
-  const [screenshot, setScreenshot] = useState<Screenshot | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
-  const messageIdRef = useRef(0);
-  const pendingRequestsRef = useRef<Map<string, { resolve: (v: any) => void; reject: (e: Error) => void }>>(new Map());
-  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
-  const isMountedRef = useRef(true);
+  const sessionIdRef = useRef<string | null>(null);
+  const nextRequestIdRef = useRef(0);
+  const pendingRef = useRef(new Map<string, PendingRequest>());
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const attemptRef = useRef(0);
+  const aliveRef = useRef(true);
+  // Latest assistant message id for token routing; kept across renders.
+  const activeAssistantIdRef = useRef<string | null>(null);
 
-  // Generate or restore session ID
-  useEffect(() => {
-    const stored = localStorage.getItem("pi-agent-session-id");
-    if (stored) setSessionId(stored);
-    isMountedRef.current = true;
-    connect();
-    return () => {
-      isMountedRef.current = false;
-      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-      wsRef.current?.close();
-    };
+  const send = useCallback((frame: ClientMessage): Promise<unknown> => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return Promise.reject(new Error("Not connected"));
+    const requestId = "requestId" in frame ? frame.requestId : `req_anon_${Date.now()}`;
+    const { promise, resolve, reject } = Promise.withResolvers<unknown>();
+    const timeout = setTimeout(() => {
+      pendingRef.current.delete(requestId);
+      reject(new Error("Request timed out"));
+    }, 120_000);
+    pendingRef.current.set(requestId, { resolve, reject, timeout });
+    ws.send(JSON.stringify(frame));
+    return promise;
   }, []);
 
   const connect = useCallback(() => {
-    if (!sessionId) {
-      const newId = `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-      setSessionId(newId);
-      localStorage.setItem("pi-agent-session-id", newId);
-    }
+    if (!aliveRef.current) return;
+    const stored = sessionIdRef.current ?? localStorage.getItem(STORAGE_KEY);
+    const url = stored ? `${WS_URL}?sessionId=${encodeURIComponent(stored)}` : WS_URL;
 
-    const ws = new WebSocket(`${WS_URL}?sessionId=${sessionId}`);
+    const ws = new WebSocket(url);
     wsRef.current = ws;
 
     ws.onopen = () => {
-      if (!isMountedRef.current) return;
-      setConnected(true);
-      console.log("[PiAgent] Connected");
+      attemptRef.current = 0;
+      // Ping loop keeps intermediate proxies honest.
+      const ping = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "ping" }));
+        else clearInterval(ping);
+      }, 30_000);
+      ws.addEventListener("close", () => clearInterval(ping), { once: true });
     };
 
-    ws.onmessage = (event) => {
-      if (!isMountedRef.current) return;
+    ws.onmessage = event => {
+      let frame: ServerMessage;
       try {
-        const msg: ServerMessage = JSON.parse(event.data);
-        handleServerMessage(msg);
-      } catch (error) {
-        console.error("[PiAgent] Parse error:", error);
+        frame = JSON.parse(event.data) as ServerMessage;
+      } catch {
+        return;
       }
+      handleFrame(frame);
     };
 
     ws.onclose = () => {
-      if (!isMountedRef.current) return;
       setConnected(false);
-      console.log("[PiAgent] Disconnected, reconnecting...");
-      reconnectTimeoutRef.current = setTimeout(connect, 2000);
+      pendingRef.current.forEach(p => { clearTimeout(p.timeout); p.reject(new Error("Connection closed")); });
+      pendingRef.current.clear();
+      if (!aliveRef.current) return;
+      const delay = Math.min(1000 * 2 ** attemptRef.current++, 15_000);
+      reconnectTimerRef.current = setTimeout(connect, delay);
     };
 
-    ws.onerror = (error) => {
-      console.error("[PiAgent] WS error:", error);
+    ws.onerror = () => {
+      // onclose follows; reconnect logic lives there.
     };
-  }, [sessionId]);
+  }, []);
 
-  const handleServerMessage = useCallback((msg: ServerMessage) => {
-    // Handle request responses
-    if (msg.requestId && pendingRequestsRef.current.has(msg.requestId)) {
-      const { resolve, reject } = pendingRequestsRef.current.get(msg.requestId)!;
-      pendingRequestsRef.current.delete(msg.requestId);
-      if (msg.type === "error") reject(new Error(String(msg.payload)));
-      else resolve(msg.payload);
-      return;
-    }
-
-    // Handle async messages
-    switch (msg.type) {
-      case "connected":
-        setSessionId((msg.payload as any)?.sessionId ?? sessionId);
+  const handleFrame = useCallback((frame: ServerMessage) => {
+    switch (frame.type) {
+      case "connected": {
+        sessionIdRef.current = frame.payload.sessionId;
+        localStorage.setItem(STORAGE_KEY, frame.payload.sessionId);
+        setConnected(true);
+        if (!frame.payload.resumed) {
+          // Fresh subprocess — previous history is gone.
+          setMessages([]);
+        }
         break;
+      }
 
       case "assistant_token": {
-        const { text, messageId } = msg.payload as { text: string; messageId: number };
-        setMessages((prev) => {
+        const { messageId, delta, text } = frame.payload;
+        setMessages(prev => {
           const last = prev[prev.length - 1];
-          if (last && last.role === "assistant" && last.id === `msg_${messageId}`) {
-            return [...prev.slice(0, -1), { ...last, content: last.content + text }];
+          if (activeAssistantIdRef.current === messageId && last?.role === "assistant" && last.id === messageId) {
+            return [...prev.slice(0, -1), { ...last, content: text }];
           }
-          return [...prev, { id: `msg_${messageId}`, role: "assistant", content: text, timestamp: Date.now() }];
+          activeAssistantIdRef.current = messageId;
+          return [...prev, { id: messageId, role: "assistant", content: text, timestamp: Date.now() }];
+        });
+        setStreaming(true);
+        break;
+      }
+
+      case "thinking_token": {
+        const { messageId, delta } = frame.payload;
+        setMessages(prev => {
+          const last = prev[prev.length - 1];
+          if (last?.role === "assistant" && last.id === messageId) {
+            return [...prev.slice(0, -1), { ...last, thinking: (last.thinking ?? "") + delta }];
+          }
+          activeAssistantIdRef.current = messageId;
+          return [...prev, { id: messageId, role: "assistant", content: "", thinking: delta, timestamp: Date.now() }];
         });
         break;
       }
 
-      case "user_message": {
-        const { messageId, text } = msg.payload as { messageId: number; text: string };
-        setMessages((prev) => [...prev, { id: `msg_${messageId}`, role: "user", content: text, timestamp: Date.now() }]);
-        break;
-      }
-
       case "tool_call": {
-        const call = msg.payload as ToolCall;
-        setMessages((prev) => {
+        const call = frame.payload;
+        setMessages(prev => {
           const last = prev[prev.length - 1];
-          const toolCall: ToolCall = { ...call, status: "pending" };
-          if (last && last.role === "assistant") {
-            return [...prev.slice(0, -1), { ...last, toolCalls: [...(last.toolCalls ?? []), toolCall] }];
+          const updated: ToolCall = {
+            id: call.id,
+            name: call.name,
+            args: call.args,
+            status: call.status,
+          };
+          if (last?.role === "assistant") {
+            const existing = last.toolCalls?.find(tc => tc.id === call.id);
+            const toolCalls = existing
+              ? last.toolCalls!.map(tc => (tc.id === call.id ? { ...tc, status: call.status } : tc))
+              : [...(last.toolCalls ?? []), updated];
+            return [...prev.slice(0, -1), { ...last, toolCalls }];
           }
-          return [...prev, { id: `tool_${call.id}`, role: "assistant", content: "", timestamp: Date.now(), toolCalls: [toolCall] }];
+          return [...prev, { id: `tools_${Date.now()}`, role: "assistant", content: "", toolCalls: [updated], timestamp: Date.now() }];
         });
         break;
       }
 
       case "tool_result": {
-        const { callId, result, error } = msg.payload as { callId: string; result?: unknown; error?: string };
-        setMessages((prev) =>
-          prev.map((m) => ({
+        const { id, result, isError } = frame.payload;
+        setMessages(prev =>
+          prev.map(m => ({
             ...m,
-            toolCalls: m.toolCalls?.map((tc) =>
-              tc.id === callId ? { ...tc, status: error ? "failed" : "completed", result, error } : tc
+            toolCalls: m.toolCalls?.map(tc =>
+              tc.id === id ? { ...tc, status: isError ? ("failed" as const) : ("completed" as const), result, error: isError ? String(result).slice(0, 500) : undefined } : tc,
             ),
-          }))
+          })),
         );
         break;
       }
 
-      case "approval_request": {
-        const approval = msg.payload as PendingApproval;
-        setPendingApproval(approval);
-        setMessages((prev) =>
-          prev.map((m) => ({
-            ...m,
-            toolCalls: m.toolCalls?.map((tc) =>
-              tc.id === approval.callId ? { ...tc, status: "pending" } : tc
-            ),
-          }))
-        );
+      case "turn_end": {
+        setStreaming(false);
         break;
       }
 
-      case "history": {
-        const { messages: history } = msg.payload as { messages: Message[] };
-        setMessages(history);
-        break;
-      }
-
-      case "page_context": {
-        setPageContext(msg.payload as PageContext);
-        break;
-      }
-
-      case "screenshot_result": {
-        setScreenshot(msg.payload as Screenshot);
-        break;
-      }
-
-      case "vision_result": {
-        const { analysis } = msg.payload as { analysis: string };
-        // Add as a system message or handle specially
-        setMessages((prev) => [
-          ...prev,
-          { id: `vision_${Date.now()}`, role: "system", content: `🔍 Vision Analysis:\n${analysis}`, timestamp: Date.now() },
-        ]);
+      case "response": {
+        const pending = pendingRef.current.get(frame.requestId);
+        if (pending) {
+          clearTimeout(pending.timeout);
+          pendingRef.current.delete(frame.requestId);
+          pending.resolve(frame.payload);
+        }
         break;
       }
 
       case "error": {
-        const errorMsg = String(msg.payload);
-        console.error("[PiAgent] Server error:", errorMsg);
-        setMessages((prev) => [
-          ...prev,
-          { id: `err_${Date.now()}`, role: "system", content: `❌ Error: ${errorMsg}`, timestamp: Date.now() },
-        ]);
+        const errorRequestId = frame.requestId;
+        const pending = errorRequestId ? pendingRef.current.get(errorRequestId) : undefined;
+        if (pending && errorRequestId) {
+          clearTimeout(pending.timeout);
+          pendingRef.current.delete(errorRequestId);
+          pending.reject(new Error(frame.payload.message));
+        } else {
+          setMessages(prev => [...prev, { id: `err_${Date.now()}`, role: "system", content: `⚠️ ${frame.payload.message}`, timestamp: Date.now() }]);
+        }
         break;
       }
-    }
-  }, [sessionId]);
 
-  const send = useCallback((msg: any): Promise<any> => {
-    return new Promise((resolve, reject) => {
-      if (wsRef.current?.readyState !== WebSocket.OPEN) {
-        reject(new Error("Not connected"));
-        return;
+      case "screenshot_result": {
+        const pending = pendingRef.current.get(frame.requestId);
+        if (pending) {
+          clearTimeout(pending.timeout);
+          pendingRef.current.delete(frame.requestId);
+          pending.resolve(frame.payload);
+        }
+        window.dispatchEvent(new CustomEvent("pi-agent-screenshot", { detail: frame.payload }));
+        break;
       }
-      const requestId = `req_${++messageIdRef.current}`;
-      const timeout = setTimeout(() => {
-        pendingRequestsRef.current.delete(requestId);
-        reject(new Error("Request timeout"));
-      }, 30000);
 
-      pendingRequestsRef.current.set(requestId, { resolve, reject });
-      wsRef.current!.send(JSON.stringify({ ...msg, requestId }));
-    });
+      case "vision_result": {
+        const pending = pendingRef.current.get(frame.requestId);
+        if (pending) {
+          clearTimeout(pending.timeout);
+          pendingRef.current.delete(frame.requestId);
+          pending.resolve(frame.payload);
+        }
+        break;
+      }
+
+      case "pong":
+        break;
+    }
   }, []);
 
-  const sendMessage = useCallback(
-    async (text: string) => {
-      await send({ type: "chat", payload: { message: text, context: pageContext ?? undefined } });
-    },
-    [send, pageContext]
-  );
+  useEffect(() => {
+    aliveRef.current = true;
+    connect();
+    return () => {
+      aliveRef.current = false;
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      wsRef.current?.close();
+    };
+  }, [connect]);
 
-  const approveTool = useCallback(
-    async (callId: string) => {
-      await send({ type: "approval_response", payload: { callId, approved: true } });
-      setPendingApproval(null);
-    },
-    [send]
-  );
-
-  const denyTool = useCallback(
-    async (callId: string) => {
-      await send({ type: "approval_response", payload: { callId, approved: false } });
-      setPendingApproval(null);
-    },
-    [send]
-  );
-
-  const requestPageContext = useCallback(async () => {
-    await send({ type: "get_page_context", payload: {} });
+  const sendMessage = useCallback(async (text: string, context?: PageContextSummary) => {
+    if (!text.trim()) return;
+    const requestId = `req_${nextRequestIdRef.current++}`;
+    // Optimistic user message; server streams the assistant reply.
+    setMessages(prev => [...prev, { id: `user_${requestId}`, role: "user", content: text, timestamp: Date.now() }]);
+    activeAssistantIdRef.current = null;
+    setStreaming(true);
+    try {
+      await send({ type: "chat", requestId, payload: { message: text, context } });
+    } catch (error) {
+      setMessages(prev => [...prev, { id: `err_${Date.now()}`, role: "system", content: `⚠️ ${String(error)}`, timestamp: Date.now() }]);
+      setStreaming(false);
+    }
   }, [send]);
 
-  const requestScreenshot = useCallback(async () => {
-    await send({ type: "screenshot", payload: {} });
+  const abort = useCallback(async () => {
+    const requestId = `req_${nextRequestIdRef.current++}`;
+    await send({ type: "abort", requestId });
+    setStreaming(false);
   }, [send]);
 
-  const requestVision = useCallback(
-    async (dataUrl: string, prompt: string) => {
-      const result = await send({ type: "vision", payload: { dataUrl, prompt } });
-      return result?.analysis ?? "No analysis returned";
-    },
-    [send]
-  );
-
-  const clearSession = useCallback(() => {
-    localStorage.removeItem("pi-agent-session-id");
-    setSessionId(null);
+  const newSession = useCallback(async () => {
+    const requestId = `req_${nextRequestIdRef.current++}`;
+    await send({ type: "new_session", requestId });
     setMessages([]);
-    setPageContext(null);
-    setScreenshot(null);
-    setPendingApproval(null);
-    wsRef.current?.close();
-    // Reconnect will create new session
+    activeAssistantIdRef.current = null;
+  }, [send]);
+
+  const requestScreenshot = useCallback(async (url?: string) => {
+    const requestId = `req_${nextRequestIdRef.current++}`;
+    await send({ type: "screenshot", requestId, payload: { url } });
+  }, [send]);
+
+  const requestVision = useCallback(async (image: string, prompt: string, model?: string) => {
+    const requestId = `req_${nextRequestIdRef.current++}`;
+    const result = (await send({ type: "vision", requestId, payload: { image, prompt, model } })) as { analysis: string };
+    return result.analysis;
+  }, [send]);
+
+  const clearMessages = useCallback(() => {
+    setMessages([]);
+    activeAssistantIdRef.current = null;
   }, []);
 
   return {
     connected,
-    sessionId,
+    sessionId: sessionIdRef.current,
+    streaming,
     messages,
-    pendingApproval,
-    pageContext,
-    screenshot,
     sendMessage,
-    approveTool,
-    denyTool,
-    requestPageContext,
+    abort,
+    newSession,
     requestScreenshot,
     requestVision,
-    clearSession,
+    clearMessages,
   };
 }

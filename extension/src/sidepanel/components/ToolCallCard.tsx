@@ -1,30 +1,23 @@
 import React, { useState } from "react";
-import { ToolCall } from "../types";
+import type { ToolCall } from "../types";
 
 interface ToolCallCardProps {
   toolCall: ToolCall;
-  isPending?: boolean;
 }
 
-export function ToolCallCard({ toolCall, isPending }: ToolCallCardProps) {
+export function ToolCallCard({ toolCall }: ToolCallCardProps) {
   const [expanded, setExpanded] = useState(false);
 
   const statusColors: Record<ToolCall["status"], string> = {
-    pending: "#d29922",
-    approved: "#238636",
-    denied: "#da3633",
     running: "#58a6ff",
     completed: "#238636",
     failed: "#da3633",
   };
 
   const statusIcons: Record<ToolCall["status"], string> = {
-    pending: "⏳",
-    approved: "✅",
-    denied: "❌",
-    running: "⚙️",
-    completed: "✅",
-    failed: "❌",
+    running: "⚙",
+    completed: "✓",
+    failed: "✕",
   };
 
   return (
@@ -32,13 +25,11 @@ export function ToolCallCard({ toolCall, isPending }: ToolCallCardProps) {
       style={{
         ...styles.card,
         borderColor: statusColors[toolCall.status],
-        opacity: isPending ? 1 : 0.9,
       }}
     >
       <div style={styles.header} onClick={() => setExpanded(!expanded)}>
         <span style={styles.icon}>{statusIcons[toolCall.status]}</span>
         <span style={{ ...styles.name, color: statusColors[toolCall.status] }}>{toolCall.name}</span>
-        {toolCall.description && <span style={styles.desc}>{toolCall.description}</span>}
         <span style={styles.toggle}>{expanded ? "▲" : "▼"}</span>
       </div>
 

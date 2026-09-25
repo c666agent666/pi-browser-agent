@@ -1,187 +1,119 @@
 # Pi Browser Agent
 
-A Chrome/Aside extension that brings the **Pi coding agent** into your browser as a side panel. Features real-time chat, tool approval UI, page context awareness, screenshots, and vision model analysis.
+A Chrome/Aside extension that brings the **[pi coding agent](https://github.com/can1357/oh-my-pi) (omp)** into your browser as a side panel: real-time chat, streaming tool activity, live page context, screenshots, and vision-model analysis.
 
-## Architecture
+**Status: working end-to-end** — verified chat round-trip through `omp --mode rpc`, Ollama Cloud vision analysis (`gemma4:31b`), and CDP target discovery.
+
+## How it works
+
+The server is a **standalone bridge** — zero imports from the pi monorepo. It spawns the installed `omp` CLI in RPC mode and speaks its stdio JSON protocol, forwarding streaming agent events to the browser over WebSocket.
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  Aside Browser (Chromium) / Chrome                              │
-│  ┌─────────────────────────┐  ┌─────────────────────────────┐  │
-│  │  Web Page               │  │  Side Panel (Extension)     │  │
-│  │                         │  │  ┌───────────────────────┐  │  │
-│  │                         │  │  │  Pi Agent UI          │  │  │
-│  │                         │  │  │  - Chat input         │  │  │
-│  │                         │  │  │  - Tool calls/approval│  │  │
-│  │                         │  │  │  - Session history    │  │  │
-│  │                         │  │  │  - Page context       │  │  │
-│  │                         │  │  │  - Screenshot + Vision│  │  │
-│  │                         │  │  └───────────────────────┘  │  │
-│  └─────────────────────────┘  └─────────────────────────────┘  │
-│          │                              │                       │
-│          │ CDP / Extension APIs         │ WebSocket             │
-│          ▼                              ▼                       │
-└──────────┼──────────────────────────────┼───────────────────────┘
-           │                              │
-           ▼                              ▼
-    ┌─────────────┐              ┌─────────────────┐
-    │  Pi Agent   │◄────────────►│  Local HTTP     │
-    │  (headless) │   MCP/WS     │  Server (Bun)   │
-    │             │              │  Port 3848      │
-    └─────────────┘              └─────────────────┘
-           │
-           ▼
-    ┌─────────────┐
-    │  File System│
-    │  Tools, LSP │
-    │  Git, etc.  │
-    └─────────────┘
+Side Panel (React, MV3)  ⇄  pi-agent-server (Bun)  ⇄  omp --mode rpc (subprocess)
+   ↕ page context / screenshots        ↕
+content script (DOM/selection)    CDP :9222 + Ollama Cloud vision
 ```
 
-## Components
-
-| Component | Description |
-|-----------|-------------|
-| **pi-agent-server** | Bun HTTP + WebSocket server that runs headless Pi agent sessions |
-| **extension** | Manifest V3 Chrome/Aside extension with React side panel |
-| **background** | Service worker maintaining persistent WS connection |
-| **content script** | Extracts page context (DOM, selection, viewport) |
+See [ARCHITECTURE.md](ARCHITECTURE.md) for design decisions and [PROTOCOL.md](PROTOCOL.md) for the wire contract.
 
 ## Features
 
-- 💬 **Chat with Pi** — Full agent capabilities in browser side panel
-- 🔧 **Tool Approval UI** — Approve/deny bash, edit, write, task tools inline
-- 📄 **Page Context** — Automatic DOM snapshot, selection, viewport, meta tags
-- 📸 **Screenshots** — Capture visible tab via `chrome.tabs.captureVisibleTab`
-- 🔍 **Vision Analysis** — Send screenshots to vision model (qwen2.5-vl, llama3.2-vision)
-- 🔄 **Session Persistence** — Survives browser/extension restarts
-- 🌐 **Aside + Chrome** — Works in both (Aside uses your logged-in sessions)
+- 💬 **Chat with pi** — full agent capabilities (tools, MCP, skills) in the side panel
+- 📡 **Live streaming** — assistant tokens and reasoning as they arrive
+- 🔧 **Tool activity** — every tool call/result streamed with status (⚙ running / ✓ / ✕)
+- ⏹ **Abort control** — kill an in-flight turn mid-stream
+- 📄 **Page context** — DOM snapshot, selection, viewport, meta tags attached per message (toggle 🔗)
+- 📸 **Screenshots** — one click via `chrome.tabs.captureVisibleTab` (no CDP needed)
+- 🔍 **Vision analysis** — screenshots analyzed by Ollama Cloud vision models (`gemma4:31b`, `qwen3.5:397b`, `kimi-k3`)
+- 🔁 **Session persistence** — reconnect to a live agent session across panel close/open
 
 ## Prerequisites
 
-1. **Pi (omp)** installed and configured with Ollama Cloud: `/ollama-setup`
-2. **Aside Browser** running with CDP: `--remote-debugging-port=9222`
-3. **Vision model** configured in Ollama Cloud (qwen2.5-vl, llama3.2-vision, etc.)
-4. **Bun** ≥ 1.1 for the server
+| Requirement | Notes |
+|---|---|
+| [pi (omp)](https://omp.sh) installed & configured | `/ollama-setup` for Ollama Cloud models |
+| Bun ≥ 1.1 | Runs the server |
+| Chrome 114+ or Aside | Side Panel API |
+| `OLLAMA_API_KEY` | Vision feature (or `~/.ollama/auth.json`) |
+| *(optional)* `--remote-debugging-port=9222` | Only for server-side CDP screenshots; extension screenshots don't need it |
 
-## Quick Start
-
-```bash
-# Clone and install
-cd pi-browser-agent
-npm install
-
-# Build extension
-npm run build:extension
-
-# Start server (terminal 1)
-npm run dev:server
-
-# Load extension in Chrome/Aside:
-# 1. Open chrome://extensions (or aside://extensions)
-# 2. Enable "Developer mode"
-# 3. Click "Load unpacked" → select `extension/dist`
-# 4. Click extension icon → opens side panel
-```
-
-## Development
+## Quick start
 
 ```bash
-# Terminal 1: Server with hot reload
-npm run dev:server
+git clone <this-repo> && cd pi-browser-agent
+bun install
 
-# Terminal 2: Extension with Vite HMR
-npm run dev:extension
+# Terminal 1: server
+bun run dev:server
+
+# Terminal 2: extension build
+bun install && bun run build:extension
 ```
+
+Then in Chrome/Aside:
+1. `chrome://extensions` (or `aside://extensions`) → enable **Developer mode**
+2. **Load unpacked** → select `extension/dist`
+3. Open the side panel (extension icon, or right-click page → "Open side panel")
 
 ## Configuration
 
-### Server (pi-agent-server)
+| Env var | Default | Purpose |
+|---|---|---|
+| `PORT` | `3848` | Server port |
+| `PI_BINARY` | `omp` | pi CLI binary |
+| `AGENT_CWD` | server cwd | Working directory for agent sessions |
+| `CDP_URL` | `http://127.0.0.1:9222` | CDP debug port (server-side screenshots) |
+| `VISION_MODEL` | `gemma4:31b` | Default Ollama Cloud vision model |
+| `OLLAMA_API_KEY` | — | Vision auth |
+| `IDLE_TIMEOUT_MS` | `1800000` | Kill idle agent subprocess after this |
 
-Environment variables:
-- `PORT` — Server port (default: 3848)
-- `HOST` — Bind host (default: 127.0.0.1)
-- `CDP_URL` — Chrome DevTools Protocol endpoint (default: http://127.0.0.1:9222)
+## Smoke tests
 
-### Extension
+```bash
+bun run check                          # typecheck server + extension
+bun packages/pi-agent-server/src/index.ts &   # start server
+bun scripts/smoke-client.ts            # full chat round-trip through omp
+curl http://127.0.0.1:3848/api/vision/models  # vision models on account
+```
 
-The extension connects to `http://127.0.0.1:3848` by default. To change, modify `WS_URL` and `HTTP_URL` in `extension/src/sidepanel/hooks/usePiAgent.ts`.
-
-## Usage Examples
-
-**Analyze current page:**
-> "Summarize this page and extract all links"
-
-**Vision analysis:**
-1. Click 📸 to capture screenshot
-2. Enter prompt: "Find all form fields and their validation rules"
-3. Click Analyze
-
-**Code automation:**
-> "Create a React component based on the design in this page"
-
-**Debug with context:**
-> "Why is this button not working?" (includes selection + DOM)
-
-## How Vision Works
-
-1. User clicks 📸 → Extension captures visible tab via `chrome.tabs.captureVisibleTab`
-2. Screenshot sent to server → Server forwards to Pi agent
-3. Pi agent uses configured vision model (via Ollama Cloud) to analyze
-4. Result streamed back to side panel as system message
-
-Required: Vision model in Ollama Cloud (configured via `/ollama-setup` in Pi).
-
-## Security
-
-- Server binds to `127.0.0.1` only (not `0.0.0.0`)
-- Extension `host_permissions` limited to localhost + active tab
-- CSP restricts connections to local server only
-- No data leaves your machine except to your configured Ollama Cloud
-
-## Troubleshooting
-
-| Issue | Fix |
-|-------|-----|
-| "Not connected" | Ensure server running on port 3848 |
-| Screenshot fails | Check `CDP_URL` env var; ensure Aside/Chrome has `--remote-debugging-port=9222` |
-| Vision errors | Verify vision model configured in Pi (`/ollama-setup`) |
-| Extension won't load | Run `npm run build:extension` first; load `dist` folder |
-| Tool approvals don't appear | Check server logs; ensure agent session is active |
-
-## Project Structure
+## Project structure
 
 ```
 pi-browser-agent/
-├── package.json                 # Workspace root
-├── packages/
-│   └── pi-agent-server/         # Bun HTTP + WS server
-│       ├── package.json
-│       └── src/server/index.ts  # Main server entry
-└── extension/                   # Chrome/Aside extension (MV3)
-    ├── package.json
-    ├── vite.config.ts
-    ├── manifest.json
-    ├── tsconfig.json
-    ├── public/
-    │   └── icon.svg
-    └── src/
-        ├── background/index.ts  # Service worker
-        ├── content/index.ts     # Content script
-        └── sidepanel/           # React side panel
-            ├── index.html
-            ├── main.tsx
-            ├── App.tsx
-            ├── hooks/usePiAgent.ts
-            ├── types.ts
-            └── components/
-                ├── MessageList.tsx
-                ├── ToolCallCard.tsx
-                ├── InputBar.tsx
-                ├── PageContextPanel.tsx
-                └── ScreenshotViewer.tsx
+├── ARCHITECTURE.md
+├── PROTOCOL.md
+├── scripts/smoke-client.ts           # end-to-end WS test client
+├── packages/pi-agent-server/src/
+│   ├── index.ts                      # Bun.serve entry (HTTP + WS)
+│   ├── config.ts                     # env config
+│   ├── types.ts                      # wire protocol types
+│   ├── agent/
+│   │   ├── pi-rpc-client.ts          # spawn omp --mode rpc, framing, correlation
+│   │   ├── session-manager.ts         # registry, respawn, idle shutdown
+│   │   └── event-bridge.ts           # AgentEvents → WS frames
+│   ├── browser/cdp.ts                # CDP screenshot capture
+│   ├── vision/ollama-vision.ts       # Ollama Cloud /api/chat vision
+│   ├── http/api.ts                   # REST routes
+│   └── ws/handlers.ts                # WS message dispatch
+└── extension/src/
+    ├── background/index.ts           # relay only (no WS — MV3 kills idle workers)
+    ├── content/index.ts              # page context extraction
+    └── sidepanel/
+        ├── App.tsx
+        ├── hooks/usePiAgent.ts       # owns the WS connection
+        ├── hooks/usePageContext.ts   # context refresh + screenshots
+        └── components/…             # chat list, tool cards, screenshot viewer
 ```
+
+## Known limitations
+
+- **Tool approvals:** pi's RPC mode doesn't expose interactive approval over the
+  wire yet — the panel shows live tool activity + Abort instead. The protocol
+  reserves `approval_request` for when pi adds it.
+- **History across restarts:** a fresh subprocess starts a fresh conversation;
+  reconnecting while the subprocess lives resumes it. (Resuming from pi session
+  files via `switch_session` is planned.)
 
 ## License
 
-MIT — Part of the Pi (oh-my-pi) ecosystem.
+MIT

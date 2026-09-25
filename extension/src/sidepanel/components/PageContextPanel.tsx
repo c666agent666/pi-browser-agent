@@ -1,8 +1,8 @@
 import React from "react";
-import { PageContext } from "../types";
+import type { PageContextSummary } from "../types";
 
 interface PageContextPanelProps {
-  context: PageContext | null;
+  context: PageContextSummary | null;
   onClose: () => void;
 }
 
@@ -32,25 +32,31 @@ export function PageContextPanel({ context, onClose }: PageContextPanelProps) {
             <pre style={styles.selection}>{context.selection}</pre>
           </div>
         )}
-        <div style={styles.section}>
-          <div style={styles.label}>Viewport</div>
-          <div style={styles.value}>
-            {context.viewport.width}×{context.viewport.height} @ scroll({context.viewport.scrollX}, {context.viewport.scrollY})
-          </div>
-        </div>
-        <div style={styles.section}>
-          <div style={styles.label}>Meta Tags</div>
-          {Object.entries(context.meta).map(([k, v]) => (
-            <div key={k} style={styles.metaRow}>
-              <span style={styles.metaKey}>{k}</span>
-              <span style={styles.metaValue}>{v}</span>
+        {context.viewport && (
+          <div style={styles.section}>
+            <div style={styles.label}>Viewport</div>
+            <div style={styles.value}>
+              {context.viewport.width}×{context.viewport.height} @ scroll({context.viewport.scrollX}, {context.viewport.scrollY})
             </div>
-          ))}
-        </div>
-        <div style={styles.section}>
-          <div style={styles.label}>DOM Snapshot (truncated)</div>
-          <pre style={styles.domSnapshot}>{context.domSnapshot.slice(0, 3000)}...</pre>
-        </div>
+          </div>
+        )}
+        {context.meta && (
+          <div style={styles.section}>
+            <div style={styles.label}>Meta Tags</div>
+            {Object.entries(context.meta).map(([k, v]) => (
+              <div key={k} style={styles.metaRow}>
+                <span style={styles.metaKey}>{k}</span>
+                <span style={styles.metaValue}>{v}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {context.domSnapshot && (
+          <div style={styles.section}>
+            <div style={styles.label}>DOM Snapshot (truncated)</div>
+            <pre style={styles.domSnapshot}>{context.domSnapshot.slice(0, 3000)}…</pre>
+          </div>
+        )}
       </div>
     </div>
   );
