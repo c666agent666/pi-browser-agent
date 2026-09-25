@@ -93,6 +93,25 @@ Releases are tagged on GitHub (`git tag` + [github.com/c666agent666/pi-browser-a
 
 ## Quick start
 
+### One-click launch (Windows)
+
+Double-click one of these — they start the server if needed and launch the browser with browser control armed:
+
+```
+C:\Users\i\pi-browser-agent\START-ASIDE.cmd     (also copied to your Desktop)
+C:\Users\i\pi-browser-agent\START-CHROME.cmd
+```
+
+First time only — load the extension inside the browser (3 clicks):
+
+1. `aside://extensions` (or `chrome://extensions`)
+2. Toggle **Developer mode** ON
+3. **Load unpacked** → `C:\Users\i\pi-browser-agent\extension\dist`
+
+Then click the green `>_` toolbar icon to open the terminal side panel. Look for `WS:OK` + `CDP:ONLINE` in the status bar.
+
+### Manual launch
+
 ```bash
 git clone <this-repo> && cd pi-browser-agent
 bun install
