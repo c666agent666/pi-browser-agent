@@ -6,7 +6,7 @@
 import type { ServerConfig } from "../config";
 import type { SessionManager } from "../agent/session-manager";
 import { captureScreenshot } from "../browser/cdp";
-import { analyzeScreenshot, listVisionModels, modelHasVision } from "../vision/ollama-vision";
+import { analyzeScreenshot, listVisionModels, modelHasVision, probeModel } from "../vision/ollama-vision";
 import { loadSettings, saveSettings } from "../settings";
 import type { ClientMessage, ServerMessage } from "../types";
 
@@ -327,6 +327,29 @@ export async function handleClientMessage(
 						interactionModel: settings.interactionModel ?? null,
 						activeModel,
 					},
+				});
+			} catch (error) {
+				ctx.send({
+					type: "error",
+					requestId: message.requestId,
+					payload: { message: error instanceof Error ? error.message : String(error) },
+				});
+			}
+			return;
+		}
+
+		case "test_model": {
+			const { model } = message.payload;
+			if (!model.trim()) {
+				ctx.send({ type: "error", requestId: message.requestId, payload: { message: "No model id given" } });
+				return;
+			}
+			try {
+				const probe = await probeModel(model.trim());
+				ctx.send({
+					type: "test_model_result",
+					requestId: message.requestId,
+					payload: { model: model.trim(), ...probe },
 				});
 			} catch (error) {
 				ctx.send({

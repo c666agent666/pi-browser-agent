@@ -75,6 +75,26 @@ export interface SetVisionModelRequest {
 	payload: { model: string };
 }
 
+/** Test a model against the real Ollama Cloud account: existence, capabilities, and a live chat probe. */
+export interface TestModelRequest {
+	type: "test_model";
+	requestId: string;
+	payload: { model: string };
+}
+
+export interface TestModelResult {
+	model: string;
+	exists: boolean;
+	capabilities: string[];
+	/** Live one-shot chat probe: did an actual request succeed? */
+	liveTest: {
+		ok: boolean;
+		reply: string;
+		latencyMs: number;
+		error?: string;
+	};
+}
+
 export type ClientMessage =
 	| ChatRequest
 	| AbortRequest
@@ -86,6 +106,7 @@ export type ClientMessage =
 	| GetModelsRequest
 	| SetInteractionModelRequest
 	| SetVisionModelRequest
+	| TestModelRequest
 	| PingRequest;
 
 // ─── Server → Client ──────────────────────────────────────────────────────
@@ -184,6 +205,13 @@ export interface ModelsFrame {
 	};
 }
 
+/** Result of a model test (answer to test_model). */
+export interface TestModelResultFrame {
+	type: "test_model_result";
+	requestId: string;
+	payload: TestModelResult;
+}
+
 export interface HistoryFrame {
 	type: "history";
 	payload: { messages: Array<{ id: string; role: "user" | "assistant"; text: string }> };
@@ -204,7 +232,8 @@ export type ServerMessage =
 	| ApprovalRequestFrame
 	| HistoryFrame
 	| ServerSettingsFrame
-	| ModelsFrame;
+	| ModelsFrame
+	| TestModelResultFrame;
 
 // ─── Shared payloads ───────────────────────────────────────────────────────
 

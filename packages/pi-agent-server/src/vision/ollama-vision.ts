@@ -23,26 +23,111 @@ function toBase64(image: string): string {
 	return image;
 }
 
-/** Check whether a model on the account has vision capability (POST /api/show). */
 export async function modelHasVision(model: string): Promise<boolean> {
+	return (await probeModel(model)).capabilities.includes("vision");
+}
+
+export interface ModelProbe {
+	exists: boolean;
+	capabilities: string[];
+	/** Live one-shot chat probe. */
+	liveTest: { ok: boolean; reply: string; latencyMs: number; error?: string };
+}
+
+/**
+ * Probe a model against the REAL Ollama Cloud account:
+ *  1. POST /api/show — does it exist, what can it do (capabilities)?
+ *  2. POST /api/chat — a real one-shot request proving it actually answers.
+ */
+export async function probeModel(model: string): Promise<ModelProbe> {
 	const apiKey = resolveOllamaApiKey();
-	if (!apiKey) return false;
+	if (!apiKey) {
+		return {
+			exists: false,
+			capabilities: [],
+			liveTest: { ok: false, reply: "", latencyMs: 0, error: "No OLLAMA_API_KEY configured" },
+		};
+	}
+
+	// 1. Existence + capabilities
+	let exists = false;
+	let capabilities: string[] = [];
 	try {
 		const show = await fetch(`${OLLAMA_BASE_URL}/api/show`, {
 			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				Authorization: `Bearer ${apiKey}`,
-			},
+			headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
 			body: JSON.stringify({ model }),
-			signal: AbortSignal.timeout(10_000),
+			signal: AbortSignal.timeout(15_000),
 		});
-		if (!show.ok) return false;
-		const details = (await show.json()) as { capabilities?: string[]; error?: string };
-		if (details.error) return false;
-		return Boolean(details.capabilities?.includes("vision"));
-	} catch {
-		return false;
+		if (show.ok) {
+			const details = (await show.json()) as { capabilities?: string[]; error?: string };
+			if (!details.error) {
+				exists = true;
+				capabilities = details.capabilities ?? [];
+		}
+		}
+	} catch {}
+
+	// 2. Live chat probe — the actual proof the model works on this account
+	const started = Date.now();
+	try {
+		const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+			body: JSON.stringify({
+				model,
+				messages: [{ role: "user", content: "Reply with exactly: OK" }],
+				stream: false,
+			options: { num_predict: 20 },
+		}),
+			signal: AbortSignal.timeout(60_000),
+		});
+		if (!response.ok) {
+			const body = await response.text().catch(() => "");
+			return {
+				exists,
+				capabilities,
+				liveTest: {
+					ok: false,
+					reply: "",
+					latencyMs: Date.now() - started,
+					error: `HTTP ${response.status}: ${body.slice(0, 200)}`,
+				},
+			};
+		}
+		const result = (await response.json()) as { message?: { content?: string }; error?: string };
+		if (result.error) {
+			return {
+				exists,
+				capabilities,
+				liveTest: {
+					ok: false,
+					reply: "",
+					latencyMs: Date.now() - started,
+						error: result.error,
+				},
+			};
+		}
+		return {
+			exists,
+			capabilities,
+			liveTest: {
+				ok: true,
+				reply: result.message?.content ?? "(empty reply)",
+				latencyMs: Date.now() - started,
+			},
+		};
+	} catch (error) {
+		return {
+			exists,
+			capabilities,
+			liveTest: {
+				ok: false,
+				reply: "",
+				latencyMs: Date.now() - started,
+				error: error instanceof Error ? error.message : String(error),
+		},
+		};
 	}
 }
 

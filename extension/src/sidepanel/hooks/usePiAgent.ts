@@ -15,6 +15,7 @@ import type {
   PageContextSummary,
   ServerMessage,
   ServerSettingsState,
+  TestModelResult,
   ToolCall,
 } from "../types";
 
@@ -43,6 +44,7 @@ export interface PiAgentApi {
   refreshModels: () => Promise<void>;
   setInteractionModel: (provider: string, modelId: string) => Promise<void>;
   setVisionModel: (model: string) => Promise<void>;
+  testModel: (model: string) => Promise<TestModelResult>;
   clearMessages: () => void;
 }
 
@@ -156,6 +158,16 @@ export function usePiAgent(): PiAgentApi {
           pending.resolve(frame.payload);
         }
         setModelsList(frame.payload);
+        break;
+      }
+
+      case "test_model_result": {
+        const pending = pendingRef.current.get(frame.requestId);
+        if (pending) {
+          clearTimeout(pending.timeout);
+          pendingRef.current.delete(frame.requestId);
+          pending.resolve(frame.payload);
+        }
         break;
       }
 
@@ -365,6 +377,15 @@ export function usePiAgent(): PiAgentApi {
     });
   }, [send]);
 
+  const testModel = useCallback(async (model: string): Promise<TestModelResult> => {
+    const result = (await send({
+      type: "test_model",
+      requestId: `req_${nextRequestIdRef.current++}`,
+      payload: { model },
+    })) as TestModelResult;
+    return result;
+  }, [send]);
+
   const clearMessages = useCallback(() => {
     setMessages([]);
     activeAssistantIdRef.current = null;
@@ -386,6 +407,7 @@ export function usePiAgent(): PiAgentApi {
     refreshModels,
     setInteractionModel,
     setVisionModel,
+    testModel,
     clearMessages,
   };
 }

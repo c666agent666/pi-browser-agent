@@ -51,6 +51,7 @@ export type ClientMessage =
   | { type: "get_models"; requestId: string }
   | { type: "set_interaction_model"; requestId: string; payload: { provider: string; modelId: string } }
   | { type: "set_vision_model"; requestId: string; payload: { model: string } }
+  | { type: "test_model"; requestId: string; payload: { model: string } }
   | { type: "ping" };
 
 // ─── Server → Client ──────────────────────────────────────────────────────
@@ -72,6 +73,13 @@ export interface ModelsListState {
   vision: string[];
 }
 
+export interface TestModelResult {
+  model: string;
+  exists: boolean;
+  capabilities: string[];
+  liveTest: { ok: boolean; reply: string; latencyMs: number; error?: string };
+}
+
 export type ServerMessage =
   | { type: "connected"; payload: { sessionId: string; resumed: boolean; model?: string } }
   | { type: "response"; requestId: string; payload: Record<string, unknown> }
@@ -84,6 +92,7 @@ export type ServerMessage =
   | { type: "history"; payload: { messages: Array<{ id: string; role: "user" | "assistant"; text: string }> } }
   | { type: "server_settings"; requestId: string; payload: ServerSettingsState }
   | { type: "models"; requestId: string; payload: ModelsListState }
+  | { type: "test_model_result"; requestId: string; payload: TestModelResult }
   | { type: "screenshot_result"; requestId: string; payload: Screenshot }
   | { type: "vision_result"; requestId: string; payload: { analysis: string; model: string } }
   | { type: "pong" };

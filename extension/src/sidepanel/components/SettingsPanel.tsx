@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useSettings, useTheme } from "../ThemeContext";
 import { font, COLOR_SLOTS, THEME_IDS, THEME_NAMES, type ThemeId } from "../themes";
-import type { ModelRef } from "../types";
+import type { ModelRef, TestModelResult } from "../types";
 import { CloseButton } from "./CloseButton";
 
 /**
@@ -21,6 +21,7 @@ export function SettingsPanel({
   setInteractionModel,
   setVisionModel,
   refreshModels,
+  testModel,
 }: {
   onClose: () => void;
   serverSettings: { visionModel: string; interactionModel?: ModelRef | null; activeModel?: ModelRef | null } | null;
@@ -28,6 +29,7 @@ export function SettingsPanel({
   setInteractionModel: (provider: string, modelId: string) => Promise<void>;
   setVisionModel: (model: string) => Promise<void>;
   refreshModels: () => Promise<void>;
+  testModel: (model: string) => Promise<TestModelResult>;
 }) {
   const t = useTheme();
   const { settings, setScreenshotEnabled, setThemeId, setColor, resetColors } = useSettings();
@@ -61,7 +63,7 @@ export function SettingsPanel({
       const match = modelsList?.interaction.find(
         m => m.modelId === value || m.modelId.split("/").pop() === value || m.modelId.split(":")[0] === value,
       );
-      provider = match?.provider ?? "ollama";
+      provider = match?.provider ?? "ollama-cloud";
     }
     try {
       await setInteractionModel(provider, modelId);
@@ -122,10 +124,20 @@ export function SettingsPanel({
             </button>
             <Hint theme={t}>
               lists come from your live account — nothing is hardcoded, so new
-              models work the day they appear. type a model id below if it's not
-              listed yet.
+              models work the day they appear. type a model id below to test
+              it against the real Ollama Cloud before using it.
             </Hint>
             <CustomModelInput theme={t} onPick={pickInteractionModel} />
+          </Section>
+
+          {/* ── model testing area ───────────────────────────── */}
+          <Section title="model test area" theme={t}>
+            <Hint theme={t}>
+              type ANY model name and test it against the real
+              ollama.com with your API key: does it exist, what can it do,
+              and does it actually answer right now?
+            </Hint>
+            <TestModelArea theme={t} testModel={testModel} onUse={pickInteractionModel} />
           </Section>
 
           {/* ── vision model + screenshots ───────────────────── */}
@@ -240,9 +252,117 @@ export function SettingsPanel({
         </div>
 
         <div style={{ ...styles.footer, borderTop: `1px solid ${t.borderBright}`, color: t.faint }}>
-          v0.3.0 · github.com/c666agent666/pi-browser-agent
+          v0.4.0 · github.com/c666agent666/pi-browser-agent
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Model test area — pings the real ollama.com with the user's API key:
+ *  1. existence + capabilities (/api/show)
+ *  2. a LIVE one-shot chat request proving the model actually answers
+ */
+function TestModelArea({
+  theme,
+  testModel,
+  onUse,
+}: {
+  theme: ReturnType<typeof useTheme>;
+  testModel: (model: string) => Promise<TestModelResult>;
+  onUse: (value: string) => Promise<void>;
+}) {
+  const t = theme;
+  const [value, setValue] = useState("");
+  const [testing, setTesting] = useState(false);
+  const [result, setResult] = useState<TestModelResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const run = async () => {
+    const model = value.trim();
+    if (!model) return;
+    setTesting(true);
+    setResult(null);
+    setError(null);
+    try {
+      const probe = await testModel(model);
+      setResult(probe);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <input
+          value={value}
+          onChange={event => setValue(event.target.value)}
+          placeholder="e.g. kimi-k3 or glm-5.3"
+          spellCheck={false}
+          onKeyDown={event => {
+            if (event.key === "Enter") void run();
+          }}
+          style={{
+            flex: 1,
+            background: t.bg,
+            border: `1px solid ${t.border}`,
+            color: t.white,
+            fontFamily: font.mono,
+            fontSize: font.sizeSmall,
+            padding: "3px 6px",
+            outline: "none",
+            caretColor: t.green,
+          }}
+          title="Any model id — it is checked against the real ollama.com catalog with your API key"
+        />
+        <button
+          className="pi-btn"
+          disabled={!value.trim() || testing}
+          onClick={() => void run()}
+          style={{
+            ...styles.link,
+            color: value.trim() && !testing ? t.green : t.faint,
+            borderColor: value.trim() && !testing ? t.greenDim : t.border,
+          }}
+        >
+          {testing ? "testing…" : "[test]"}
+        </button>
+      </div>
+
+      {result && (
+        <div style={{ ...styles.probeResult, border: `1px solid ${result.liveTest.ok ? t.greenDim : t.red}`, background: t.bg }}>
+          <div style={{ color: result.exists ? t.green : t.red }}>
+            {result.exists ? "✓ exists on your account" : "✗ not found on ollama.com"}
+          </div>
+          {result.exists && result.capabilities.length > 0 && (
+            <div style={{ color: t.dim, fontSize: font.sizeTiny }}>
+              capabilities: {result.capabilities.join(", ")}
+            </div>
+          )}
+          <div style={{ color: result.liveTest.ok ? t.green : t.red }}>
+            {result.liveTest.ok
+              ? `✓ live test passed (${result.liveTest.latencyMs}ms) — it answered: "${result.liveTest.reply.slice(0, 60)}"`
+              : `✗ live test failed: ${result.liveTest.error ?? "no reply"}`}
+          </div>
+          {result.liveTest.ok && (
+            <button
+              className="pi-btn"
+              onClick={() => {
+                void onUse(value.trim());
+              }}
+              style={{ ...styles.link, color: t.green, borderColor: t.greenDim, marginTop: 4 }}
+              title="Make this the agent's interaction model"
+            >
+              [use this model]
+            </button>
+          )}
+        </div>
+      )}
+      {error && <div style={{ color: t.red, fontSize: font.sizeSmall }}>{error}</div>}
     </div>
   );
 }
@@ -377,6 +497,13 @@ const styles: Record<string, React.CSSProperties> = {
   themeButton: { background: "transparent", border: "1px solid", padding: "2px 8px", fontFamily: font.mono, fontSize: font.sizeTiny },
   colorGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 12px", margin: "4px 0" },
   colorSlot: { display: "flex", alignItems: "center", gap: 6, cursor: "pointer" },
+  probeResult: {
+    padding: "6px 8px",
+    fontSize: font.sizeSmall,
+    display: "flex",
+    flexDirection: "column",
+    gap: 3,
+  },
   notice: {
     margin: "10px 0 2px",
     border: "1px solid",

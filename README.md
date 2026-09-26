@@ -67,6 +67,34 @@ Start-Process "C:\Program Files\Aside\Application\Aside.exe" -ArgumentList "--re
 
 With `CDP:OFF` everything else still works (chat, page context, screenshots, vision) — the agent just can't drive the browser. **Security:** the debug port is local-only, but any local process can control the browser while it's listening; launch it only when you want agent control.
 
+## Model reality — pi accepts what you type, the list is never stale
+
+**The problem:** pi's bundled catalog only knows models from its release date, so typing e.g. `kimi-k3` was rejected ("Model not found").
+
+**The fix (this machine, v0.4.0):** a custom provider in `~/.omp/agent/models.yml` exposes the **entire live Ollama Cloud catalog** through the OpenAI-compatible endpoint, with **runtime model discovery**:
+
+```yaml
+providers:
+  ollama-cloud:
+    baseUrl: https://ollama.com/v1
+    apiKey: OLLAMA_API_KEY
+    api: openai-completions
+    discovery:
+      type: openai-models-list
+```
+
+- The model list comes from `https://ollama.com/v1/models` **at runtime** — pause for 2 years and obsolete models vanish, new ones appear the day they exist (51 models discovered on this account today; 190 total in the picker).
+- pi accepts any model you type (verified: `set_model ollama-cloud/kimi-k3` OK, and a real prompt answered through it).
+
+## Model test area — check a model is real before using it
+
+In **[settings]** → *model test area*, type any model name and hit **[test]**. The server pings the **real ollama.com with your API key**:
+
+1. **Existence + capabilities** via `/api/show` — vision? tools? thinking?
+2. **A live one-shot chat request** — the actual proof it answers right now, with latency
+
+Verified behavior: `kimi-k3` → exists ✓, `[vision, thinking, completion, tools]`, live test OK in 1159ms; a fake model → `✗ not found` with the real HTTP 404 error. A passing test offers **[use this model]** — pi then genuinely accepts it (via the `ollama-cloud` provider).
+
 ## Session resume
 
 Conversations survive both panel restarts and **server restarts**:

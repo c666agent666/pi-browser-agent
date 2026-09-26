@@ -31,6 +31,7 @@ export function App() {
     setInteractionModel,
     setVisionModel,
     refreshModels,
+    testModel,
   } = usePiAgent();
 
   const { context, refresh, captureScreenshot } = usePageContext();
@@ -236,6 +237,7 @@ export function App() {
           setInteractionModel={setInteractionModel}
           setVisionModel={setVisionModel}
           refreshModels={refreshModels}
+          testModel={testModel}
         />
       )}
 
