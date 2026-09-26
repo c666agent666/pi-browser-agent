@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useSettings, useTheme } from "../ThemeContext";
 import { font, COLOR_SLOTS, THEME_IDS, THEME_NAMES, type ThemeId } from "../themes";
 import type { ModelRef } from "../types";
+import { CloseButton } from "./CloseButton";
 
 /**
  * Settings menu:
@@ -47,11 +48,21 @@ export function SettingsPanel({
   };
 
   const pickInteractionModel = async (value: string) => {
-    // Select value format: "provider/modelId"
+    let provider: string;
+    let modelId: string;
     const slash = value.indexOf("/");
-    if (slash <= 0) return;
-    const provider = value.slice(0, slash);
-    const modelId = value.slice(slash + 1);
+    if (slash > 0) {
+      provider = value.slice(0, slash);
+      modelId = value.slice(slash + 1);
+    } else {
+      // Bare model id: find its provider in the live list, fall back to
+      // "ollama" so pi surfaces a real error instead of us failing silently.
+      modelId = value;
+      const match = modelsList?.interaction.find(
+        m => m.modelId === value || m.modelId.split("/").pop() === value || m.modelId.split(":")[0] === value,
+      );
+      provider = match?.provider ?? "ollama";
+    }
     try {
       await setInteractionModel(provider, modelId);
       handleNotice(`interaction model → ${modelId}`);
@@ -75,14 +86,7 @@ export function SettingsPanel({
         {/* header */}
         <div style={{ ...styles.header, borderBottom: `1px solid ${t.borderBright}` }}>
           <span style={{ color: t.green, fontWeight: 700 }}>┌ settings</span>
-          <button
-            onClick={onClose}
-            className="pi-btn"
-            style={{ ...styles.close, color: t.dim, borderColor: t.border }}
-            title="Close settings"
-          >
-            [x]
-          </button>
+          <CloseButton onClick={onClose} title="Close settings" />
         </div>
 
         <div style={styles.body}>

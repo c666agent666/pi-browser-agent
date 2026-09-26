@@ -2,6 +2,7 @@ import React from "react";
 import type { Screenshot } from "../types";
 import { useTheme } from "../ThemeContext";
 import { font } from "../themes";
+import { CloseButton } from "./CloseButton";
 
 export function ScreenshotViewer({
   screenshot,
@@ -26,13 +27,7 @@ export function ScreenshotViewer({
         <span style={{ color: t.faint, fontSize: font.sizeTiny, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {screenshot.url}
         </span>
-        <button
-          onClick={onClose}
-          className="pi-btn"
-          style={{ background: "transparent", border: "none", color: t.dim, cursor: "pointer", fontFamily: font.mono, fontSize: font.sizeTiny }}
-        >
-          [x]
-        </button>
+        <CloseButton onClick={onClose} title="Close the screenshot view" />
       </div>
       <div style={{ padding: "0 10px 10px", overflow: "auto" }}>
         <img src={screenshot.dataUrl} alt="screenshot" style={{ width: "100%", border: `1px solid ${t.border}`, display: "block" }} />

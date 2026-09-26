@@ -2,6 +2,7 @@ import React from "react";
 import type { PageContextSummary } from "../types";
 import { useTheme } from "../ThemeContext";
 import { font } from "../themes";
+import { CloseButton } from "./CloseButton";
 
 export function PageContextPanel({
   context,
@@ -15,13 +16,7 @@ export function PageContextPanel({
     <div style={{ ...styles.panel, background: t.bgPanel, borderBottom: `1px solid ${t.borderBright}` }}>
       <div style={styles.header}>
         <span style={{ color: t.green, fontSize: font.sizeSmall }}>┌ page info</span>
-        <button
-          onClick={onClose}
-          className="pi-btn"
-          style={{ background: "transparent", border: "none", color: t.dim, cursor: "pointer", fontFamily: font.mono, fontSize: font.sizeTiny }}
-        >
-          [x]
-        </button>
+        <CloseButton onClick={onClose} title="Close page info" />
       </div>
       <div style={{ padding: "0 10px 10px", overflow: "auto" }}>
         {!context && (
