@@ -129,10 +129,11 @@ export function usePiAgent(): PiAgentApi {
       }
 
       case "assistant_token": {
-        const { messageId, delta, text } = frame.payload;
+        const { messageId, text } = frame.payload;
         setMessages(prev => {
           const last = prev[prev.length - 1];
-          if (activeAssistantIdRef.current === messageId && last?.role === "assistant" && last.id === messageId) {
+          // Update the current assistant block in place — never one line per token.
+          if (last && last.role === "assistant" && last.id === activeAssistantIdRef.current) {
             return [...prev.slice(0, -1), { ...last, content: text }];
           }
           activeAssistantIdRef.current = messageId;
@@ -146,7 +147,7 @@ export function usePiAgent(): PiAgentApi {
         const { messageId, delta } = frame.payload;
         setMessages(prev => {
           const last = prev[prev.length - 1];
-          if (last?.role === "assistant" && last.id === messageId) {
+          if (last && last.role === "assistant" && last.id === activeAssistantIdRef.current) {
             return [...prev.slice(0, -1), { ...last, thinking: (last.thinking ?? "") + delta }];
           }
           activeAssistantIdRef.current = messageId;

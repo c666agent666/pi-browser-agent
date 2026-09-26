@@ -2,6 +2,11 @@
  * Event bridge — maps pi `AgentEvent` frames (streamed verbatim by the
  * RPC subprocess) onto the extension-facing WS protocol.
  *
+ * IMPORTANT: pi's streamed `message_update` events do not carry a stable
+ * per-message id, so this bridge mints one per TURN (`turn_start` counts).
+ * The client renders one assistant block per turn — streaming deltas
+ * update that block in place instead of creating new lines.
+ *
  * Source shapes (see pi packages/agent/src/types.ts AgentEvent):
  *   message_update: { message, assistantMessageEvent }
  *     assistantMessageEvent: { type: "text_delta", delta, partial }
@@ -9,7 +14,6 @@
  *                            | { type: "toolcall_end", toolCall, partial }
  *   tool_execution_start: { toolCallId, toolName, args }
  *   tool_execution_end:   { toolCallId, toolName, result, isError }
- *   turn_end / agent_end: turn lifecycle markers
  */
 
 import type { ServerMessage } from "../types";
@@ -19,98 +23,110 @@ interface EventShape {
 	[key: string]: unknown;
 }
 
-export function bridgeEvents(rawEvent: unknown): ServerMessage[] {
-	const frames: ServerMessage[] = [];
-	const event = rawEvent as EventShape;
-	if (typeof event?.type !== "string") return frames;
+export type EventBridge = (rawEvent: unknown) => ServerMessage[];
 
-	switch (event.type) {
-		case "message_update": {
-			const message = event.message as { role?: string; id?: string } | undefined;
-			const messageId = `msg_${message?.id ?? Date.now()}`;
-			if (message?.role !== "assistant") break;
+/**
+ * Create a per-session bridge. Each bridge keeps its own turn counter,
+ * so message ids are stable within a session and unique across sessions.
+ */
+export function createEventBridge(): EventBridge {
+	let turn = 0;
 
-			const streamEvent = event.assistantMessageEvent as { type?: string; delta?: string; partial?: unknown } | undefined;
-			if (!streamEvent?.type) break;
+	return rawEvent => {
+		const frames: ServerMessage[] = [];
+		const event = rawEvent as EventShape;
+		if (typeof event?.type !== "string") return frames;
 
-			if (streamEvent.type === "text_delta" && typeof streamEvent.delta === "string") {
-				frames.push({
-					type: "assistant_token",
-					payload: {
-						messageId,
-						delta: streamEvent.delta,
-						text: messageText(streamEvent.partial),
-					},
-				});
-			} else if (streamEvent.type === "thinking_delta" && typeof streamEvent.delta === "string") {
-				frames.push({
-					type: "thinking_token",
-					payload: { messageId, delta: streamEvent.delta },
-				});
-			} else if (streamEvent.type === "toolcall_end") {
-				const toolCall = (streamEvent as { toolCall?: { id?: string; name?: string; args?: unknown } }).toolCall;
-				if (toolCall) {
+		if (event.type === "turn_start") turn++;
+		const messageId = `turn_${turn}`;
+
+		switch (event.type) {
+			case "message_update": {
+				const message = event.message as { role?: string } | undefined;
+				if (message?.role !== "assistant") break;
+
+				const streamEvent = event.assistantMessageEvent as
+					| { type?: string; delta?: string; partial?: unknown }
+					| undefined;
+				if (!streamEvent?.type) break;
+
+				if (streamEvent.type === "text_delta" && typeof streamEvent.delta === "string") {
 					frames.push({
-						type: "tool_call",
+						type: "assistant_token",
 						payload: {
-							id: String(toolCall.id ?? `tc_${Date.now()}`),
-							name: String(toolCall.name ?? "unknown"),
-							args: (toolCall.args as Record<string, unknown>) ?? {},
-							status: "running",
+							messageId,
+							delta: streamEvent.delta,
+							text: messageText(streamEvent.partial),
 						},
 					});
+				} else if (streamEvent.type === "thinking_delta" && typeof streamEvent.delta === "string") {
+					frames.push({
+						type: "thinking_token",
+						payload: { messageId, delta: streamEvent.delta },
+					});
+				} else if (streamEvent.type === "toolcall_end") {
+					const toolCall = (streamEvent as { toolCall?: { id?: string; name?: string; args?: unknown } })
+						.toolCall;
+					if (toolCall) {
+						frames.push({
+							type: "tool_call",
+							payload: {
+								id: String(toolCall.id ?? `tc_${turn}_${Date.now()}`),
+								name: String(toolCall.name ?? "unknown"),
+								args: (toolCall.args as Record<string, unknown>) ?? {},
+								status: "running",
+							},
+						});
+					}
 				}
+				break;
 			}
-			break;
+
+			case "tool_execution_start": {
+				frames.push({
+					type: "tool_call",
+					payload: {
+						id: String(event.toolCallId ?? `tc_${turn}_${Date.now()}`),
+						name: String(event.toolName ?? "unknown"),
+						args: (event.args as Record<string, unknown>) ?? {},
+						status: "running",
+					},
+				});
+				break;
+			}
+
+			case "tool_execution_end": {
+				const isError = Boolean(event.isError);
+				const id = String(event.toolCallId ?? "");
+				frames.push({
+					type: "tool_call",
+					payload: {
+						id,
+						name: String(event.toolName ?? "unknown"),
+						args: {},
+						status: isError ? "failed" : "completed",
+					},
+				});
+				frames.push({
+					type: "tool_result",
+					payload: {
+						id,
+						name: String(event.toolName ?? "unknown"),
+						result: event.result,
+						isError,
+					},
+				});
+				break;
+			}
+
+			case "turn_end": {
+				frames.push({ type: "turn_end", payload: { messageId } });
+				break;
+			}
 		}
 
-		case "tool_execution_start": {
-			frames.push({
-				type: "tool_call",
-				payload: {
-					id: String(event.toolCallId ?? `tc_${Date.now()}`),
-					name: String(event.toolName ?? "unknown"),
-					args: (event.args as Record<string, unknown>) ?? {},
-					status: "running",
-				},
-			});
-			break;
-		}
-
-		case "tool_execution_end": {
-			const isError = Boolean(event.isError);
-			frames.push({
-				type: "tool_call",
-				payload: {
-					id: String(event.toolCallId ?? ""),
-					name: String(event.toolName ?? "unknown"),
-					args: {},
-					status: isError ? "failed" : "completed",
-				},
-			});
-			frames.push({
-				type: "tool_result",
-				payload: {
-					id: String(event.toolCallId ?? ""),
-					name: String(event.toolName ?? "unknown"),
-					result: event.result,
-					isError,
-				},
-			});
-			break;
-		}
-
-		case "turn_end": {
-			const message = event.message as { id?: string } | undefined;
-			frames.push({
-				type: "turn_end",
-				payload: { messageId: message?.id ? `msg_${message.id}` : `msg_${Date.now()}` },
-			});
-			break;
-		}
-	}
-
-	return frames;
+		return frames;
+	};
 }
 
 /** Extract plain text from an agent message (content may be a string or content blocks). */

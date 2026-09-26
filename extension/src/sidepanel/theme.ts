@@ -70,4 +70,9 @@ export const scanlinesCss = `
   ::-webkit-scrollbar-track { background: ${colors.bg}; }
   ::-webkit-scrollbar-thumb { background: ${colors.borderBright}; border-radius: 0; }
   ::-webkit-scrollbar-thumb:hover { background: ${colors.greenDim}; }
+  .pi-tool-line { cursor: pointer; transition: background 0.1s; }
+  .pi-tool-line:hover { background: ${colors.greenFaint}; }
+  .pi-btn { transition: filter 0.1s; cursor: pointer; }
+  .pi-btn:hover { filter: brightness(1.5); }
+  details summary::-webkit-details-marker { display: none; }
 `;

@@ -6,7 +6,7 @@
 
 import { PiRpcClient, type PiEvent } from "./pi-rpc-client";
 import { getSessionFile, setSessionFile } from "./session-store";
-import { bridgeEvents, messageText } from "./event-bridge";
+import { createEventBridge, messageText } from "./event-bridge";
 import type { ServerConfig } from "../config";
 import type { ServerMessage } from "../types";
 
@@ -126,8 +126,10 @@ export class SessionManager {
 		if (!session) return;
 		session.attached = true;
 		this.#clearIdle(sessionId);
+		// One bridge per session — its turn counter mints stable message ids.
+		const bridge = createEventBridge();
 		session.client.onEvent = (event: PiEvent) => {
-			for (const frame of bridgeEvents(event)) onFrame(frame);
+			for (const frame of bridge(event)) onFrame(frame);
 			// Re-persist the session file after each completed turn: pi
 			// creates the file lazily, so the path reported at spawn time
 			// only exists on disk once the first message has been saved.

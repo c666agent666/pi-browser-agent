@@ -30,7 +30,9 @@ export function App() {
   const [visionResult, setVisionResult] = useState<string | null>(null);
   const [includeContext, setIncludeContext] = useState(true);
   const [cdpOnline, setCdpOnline] = useState<boolean | null>(null);
+  const [confirmNew, setConfirmNew] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const confirmTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const handleSend = useCallback(
     async (text: string) => {
@@ -57,6 +59,19 @@ export function App() {
       setVisionResult(`[error] ${String(error)}`);
     }
   }, [requestVision, screenshot, visionPrompt]);
+
+  // New chat needs a second click within 3 seconds — it wipes the
+  // conversation, so it must be visibly confirmed.
+  const handleNew = useCallback(() => {
+    if (!confirmNew) {
+      setConfirmNew(true);
+      confirmTimerRef.current = setTimeout(() => setConfirmNew(false), 3000);
+      return;
+    }
+    clearTimeout(confirmTimerRef.current);
+    setConfirmNew(false);
+    void newSession();
+  }, [confirmNew, newSession]);
 
   // Auto-scroll the terminal log.
   useEffect(() => {
@@ -99,11 +114,22 @@ export function App() {
 
       {/* ── status bar ─────────────────────────────────────────── */}
       <div style={styles.statusBar}>
-        <span style={{ ...styles.statusSeg, color: colors.green, fontWeight: 700 }}>
-          π pi-agent
+        <span
+          style={{ ...styles.statusSeg, color: colors.green, fontWeight: 700 }}
+          title="pi-browser-agent — a local AI agent running on this computer via the pi (omp) CLI. It can read and control this browser. Everything stays on your machine."
+        >
+          π agent
         </span>
-        <span style={styles.statusSeg}>{sessionId ? sessionId.slice(0, 14) : "…"}</span>
-        <span style={{ ...styles.statusSeg, color: connected ? colors.green : colors.red }}>
+        <span
+          style={styles.statusSeg}
+          title={`Session id: ${sessionId ?? "(connecting)"} — this conversation. It survives closing the panel and even server restarts. [new chat] starts a fresh one.`}
+        >
+          {sessionId ? `s=${sessionId.replace(/^sess_/, "").slice(0, 10)}` : "s=…"}
+        </span>
+        <span
+          style={{ ...styles.statusSeg, color: connected ? colors.green : colors.red }}
+          title="WS = WebSocket connection to the local agent server (port 3848). OK means the agent is reachable. If DOWN, start it with the desktop launcher."
+        >
           {connected ? "WS:OK" : "WS:DOWN"}
         </span>
         <span
@@ -114,23 +140,46 @@ export function App() {
           }}
           title={
             cdpOnline
-              ? "Agent can control this browser (CDP debug port detected). Type a task and it will click/type/navigate."
-              : "Relaunch the browser with --remote-debugging-port=9222 to let the agent control it (context, screenshots and vision still work without it)."
+              ? "CDP:ONLINE — the agent can control this browser: open pages, click, type. Your logins work because it drives your real browser."
+              : "CDP:OFF — the browser wasn't launched with the debug port, so the agent can't control it. Close the browser and use the 'Launch Pi Agent' desktop icon. Chat still works."
           }
         >
           {cdpOnline === null ? "CDP:…" : cdpOnline ? "CDP:ONLINE" : "CDP:OFF"}
         </span>
-        <span style={{ ...styles.statusRight, color: includeContext ? colors.green : colors.faint }}>
-          ctx
+        <span
+          style={{ ...styles.statusRight, color: includeContext ? colors.green : colors.faint }}
+          title={includeContext ? "auto-attach is ON: every message you send also includes this page's URL, title, your selected text, and a DOM outline." : "auto-attach is OFF: messages are sent without page info. Click [auto-attach] to turn it on."}
+        >
+          auto-attach {includeContext ? "on" : "off"}
         </span>
       </div>
 
       {/* ── toolbar ────────────────────────────────────────────── */}
       <div style={styles.toolbar}>
-        <TermButton onClick={() => setShowContext(v => !v)} active={showContext} label="context" />
-        <TermButton onClick={handleScreenshot} label="capture" />
-        <TermButton onClick={() => setIncludeContext(v => !v)} active={includeContext} label="page-ctx" />
-        <TermButton onClick={() => newSession()} label="new" />
+        <TermButton
+          onClick={() => setShowContext(v => !v)}
+          active={showContext}
+          label="page info"
+          title="Show what the agent can see of this page: URL, title, your selected text, viewport, and a simplified DOM outline. Read-only — nothing is changed."
+        />
+        <TermButton
+          onClick={handleScreenshot}
+          label="screenshot"
+          title="Capture this page right now and open the vision panel — ask a vision model anything about the screenshot (e.g. 'find all form fields')."
+        />
+        <TermButton
+          onClick={() => setIncludeContext(v => !v)}
+          active={includeContext}
+          label="auto-attach"
+          title="ON: every message you send automatically includes this page's info (URL, title, selection, DOM outline) so the agent knows where you are. OFF: plain messages only."
+        />
+        <TermButton
+          onClick={handleNew}
+          active={confirmNew}
+          label={confirmNew ? "sure?" : "new chat"}
+          danger={confirmNew}
+          title={confirmNew ? "Click again to erase this conversation and start fresh." : "Start a NEW conversation. The current one is erased (click twice to confirm)."}
+        />
       </div>
 
       {showContext && <PageContextPanel context={context} onClose={() => setShowContext(false)} />}
@@ -148,13 +197,18 @@ export function App() {
 
       {/* ── terminal log ───────────────────────────────────────── */}
       <div style={styles.log}>
-        <MessageList messages={messages} />
+        <MessageList messages={messages} streaming={streaming} />
         {streaming && (
           <div style={styles.streamingLine}>
-            <span style={{ color: colors.greenDim }}>▊</span>
-            <span style={{ color: colors.dim, marginLeft: 6 }}>working</span>
-            <button style={styles.abortButton} onClick={() => abort()} disabled={!connected}>
-              ^ABORT
+            <span className="pi-cursor">▊</span>
+            <span style={{ color: colors.dim, marginLeft: 6 }}>agent working — you can abort</span>
+            <button
+              style={styles.abortButton}
+              onClick={() => abort()}
+              disabled={!connected}
+              title="Stop the agent immediately (what it already did is kept)"
+            >
+              ABORT
             </button>
           </div>
         )}
@@ -170,18 +224,24 @@ function TermButton({
   onClick,
   active,
   label,
+  title,
+  danger,
 }: {
   onClick: () => void;
   active?: boolean;
   label: string;
+  title: string;
+  danger?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
+      title={title}
+      className="pi-btn"
       style={{
         ...styles.termButton,
-        color: active ? colors.green : colors.dim,
-        borderColor: active ? colors.greenDim : colors.border,
+        color: danger ? colors.red : active ? colors.green : colors.dim,
+        borderColor: danger ? colors.red : active ? colors.greenDim : colors.border,
       }}
     >
       [{label}]
@@ -209,8 +269,8 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: "nowrap",
     overflow: "hidden",
   },
-  statusSeg: { color: colors.dim },
-  statusRight: { marginLeft: "auto", fontSize: font.sizeTiny },
+  statusSeg: { color: colors.dim, cursor: "help" },
+  statusRight: { marginLeft: "auto", fontSize: font.sizeTiny, cursor: "help" },
   toolbar: {
     display: "flex",
     gap: 6,
@@ -223,7 +283,6 @@ const styles: Record<string, React.CSSProperties> = {
     border: `1px solid ${colors.border}`,
     padding: "2px 6px",
     fontSize: font.sizeTiny,
-    cursor: "pointer",
     fontFamily: font.mono,
   },
   log: { flex: 1, overflow: "auto", padding: "10px 12px" },
