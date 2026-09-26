@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useTheme } from "../ThemeContext";
-import { useSettings } from "../hooks/useSettings";
+import { useSettings, useTheme } from "../ThemeContext";
 import { font, COLOR_SLOTS, THEME_IDS, THEME_NAMES, type ThemeId } from "../themes";
 import type { ModelRef } from "../types";
 

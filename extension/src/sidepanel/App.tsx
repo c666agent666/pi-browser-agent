@@ -6,8 +6,7 @@ import { ScreenshotViewer } from "./components/ScreenshotViewer";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { usePiAgent } from "./hooks/usePiAgent";
 import { usePageContext } from "./hooks/usePageContext";
-import { useSettings } from "./hooks/useSettings";
-import { useTheme } from "./ThemeContext";
+import { useSettings, useTheme } from "./ThemeContext";
 import { font, scanlinesCss } from "./themes";
 import type { Screenshot } from "./types";
 
