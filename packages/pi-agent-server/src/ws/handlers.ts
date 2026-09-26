@@ -70,7 +70,17 @@ export async function handleClientMessage(
 			}
 
 			// Prepend page context (if provided) to the user prompt.
-			const prompt = context ? `<page-context>\n${formatContextPrompt(context)}\n</page-context>\n\n${text}` : text;
+			let prompt = context ? `<page-context>\n${formatContextPrompt(context)}\n</page-context>\n\n${text}` : text;
+
+			// Auto-learn nudge, once per session: pi's standing autolearn guidance
+			// already points at manage_skill; this makes the agent actively capture
+			// lessons during its normal turn (pi's experimental post-stop capture
+			// turn does not fire in RPC mode, and would cost an extra LLM call even
+			// when it does).
+			if (!session.autolearnReminderSent) {
+				session.autolearnReminderSent = true;
+				prompt += `\n\n<system-reminder>Auto-learn is active. If during this task you hit a failure you had to correct — a wrong path, a failed command, an unexpected result, an element that did not respond, an action you had to retry differently — that is a lesson. Capture it with the manage_skill tool (create a new managed skill, or enhance an existing one) BEFORE you finish, so future sessions avoid the same trap. Keep it to genuinely reusable lessons; skip it only for trivial tasks.</system-reminder>`;
+			}
 
 			try {
 				const response = await session.client.send("prompt", {

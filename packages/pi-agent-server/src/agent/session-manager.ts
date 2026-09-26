@@ -17,6 +17,8 @@ export interface ManagedSession {
 	/** True when the panel reattached to a live or resumed subprocess. */
 	resumed: boolean;
 	attached: boolean;
+	/** True once the auto-learn nudge has been sent for this session. */
+	autolearnReminderSent: boolean;
 }
 
 export interface HistoryMessage {
@@ -63,7 +65,7 @@ export class SessionManager {
 		const client = new PiRpcClient(this.config);
 		await client.waitReady();
 
-		const session: ManagedSession = { sessionId: newId, client, resumed: false, attached: false };
+		const session: ManagedSession = { sessionId: newId, client, resumed: false, attached: false, autolearnReminderSent: false };
 		this.#sessions.set(newId, session);
 
 		// Try to resume from the stored pi session file.
