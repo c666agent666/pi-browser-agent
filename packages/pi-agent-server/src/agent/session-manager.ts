@@ -7,6 +7,7 @@
 import { PiRpcClient, type PiEvent } from "./pi-rpc-client";
 import { getSessionFile, setSessionFile } from "./session-store";
 import { createEventBridge, messageText } from "./event-bridge";
+import { loadSettings } from "../settings";
 import type { ServerConfig } from "../config";
 import type { ServerMessage } from "../types";
 
@@ -78,6 +79,23 @@ export class SessionManager {
 				}
 			} catch (error) {
 				console.warn(`[sessions] resume error for ${newId}:`, error);
+			}
+		}
+
+		// Apply the persisted interaction model to fresh subprocesses so the
+		// model choice survives restarts.
+		const storedModel = loadSettings().interactionModel;
+		if (storedModel) {
+			try {
+				const response = await client.send("set_model", {
+					provider: storedModel.provider,
+					modelId: storedModel.modelId,
+				});
+				if (!response.success) {
+					console.warn(`[sessions] could not apply model ${storedModel.modelId}: ${response.error ?? "rejected"}`);
+				}
+			} catch (error) {
+				console.warn(`[sessions] set_model failed:`, error);
 			}
 		}
 

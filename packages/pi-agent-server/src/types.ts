@@ -49,6 +49,32 @@ export interface PingRequest {
 	type: "ping";
 }
 
+/** Ask the server for its model configuration + what's available. */
+export interface GetSettingsRequest {
+	type: "get_server_settings";
+	requestId: string;
+}
+
+/** List pi's available interaction models + Ollama vision-capable models. */
+export interface GetModelsRequest {
+	type: "get_models";
+	requestId: string;
+}
+
+/** Change the agent's interaction model (pi set_model), persisted. */
+export interface SetInteractionModelRequest {
+	type: "set_interaction_model";
+	requestId: string;
+	payload: { provider: string; modelId: string };
+}
+
+/** Change the vision model used for screenshot analysis, persisted. */
+export interface SetVisionModelRequest {
+	type: "set_vision_model";
+	requestId: string;
+	payload: { model: string };
+}
+
 export type ClientMessage =
 	| ChatRequest
 	| AbortRequest
@@ -56,6 +82,10 @@ export type ClientMessage =
 	| GetStateRequest
 	| ServerScreenshotRequest
 	| VisionRequest
+	| GetSettingsRequest
+	| GetModelsRequest
+	| SetInteractionModelRequest
+	| SetVisionModelRequest
 	| PingRequest;
 
 // ─── Server → Client ──────────────────────────────────────────────────────
@@ -132,6 +162,28 @@ export interface ApprovalRequestFrame {
 	payload: { callId: string; tool: string; args: Record<string, unknown> };
 }
 
+/** Server settings + live model state (answer to get_server_settings). */
+export interface ServerSettingsFrame {
+	type: "server_settings";
+	requestId: string;
+	payload: {
+		visionModel: string;
+		interactionModel?: { provider: string; modelId: string } | null;
+		/** Model pi is actually running right now (from get_state). */
+		activeModel?: { provider: string; modelId: string } | null;
+	};
+}
+
+/** Available models (answer to get_models). */
+export interface ModelsFrame {
+	type: "models";
+	requestId: string;
+	payload: {
+		interaction: Array<{ provider: string; modelId: string; name?: string }>;
+		vision: string[];
+	};
+}
+
 export interface HistoryFrame {
 	type: "history";
 	payload: { messages: Array<{ id: string; role: "user" | "assistant"; text: string }> };
@@ -150,7 +202,9 @@ export type ServerMessage =
 	| VisionResultFrame
 	| PongFrame
 	| ApprovalRequestFrame
-	| HistoryFrame;
+	| HistoryFrame
+	| ServerSettingsFrame
+	| ModelsFrame;
 
 // ─── Shared payloads ───────────────────────────────────────────────────────
 

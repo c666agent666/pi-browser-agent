@@ -28,6 +28,10 @@ and is mirrored in `extension/src/sidepanel/types.ts` — keep both in sync.
 | `{ type: "abort", requestId }` | Abort the in-flight turn. |
 | `{ type: "new_session", requestId }` | Start a fresh pi conversation (same subprocess). |
 | `{ type: "get_state", requestId }` | Pi session state (model, streaming flags, message count…). |
+| `{ type: "get_server_settings", requestId }` | Current interaction + vision model. |
+| `{ type: "get_models", requestId }` | Live interaction model list (pi catalog) + vision-capable models (Ollama Cloud). |
+| `{ type: "set_interaction_model", requestId, payload: { provider, modelId } }` | Change the agent's model (pi `set_model`); persisted and re-applied to new sessions. |
+| `{ type: "set_vision_model", requestId, payload: { model } }` | Change the vision model; rejected unless the model is vision-capable (validated live). |
 | `{ type: "screenshot", requestId, payload: { url? } }` | Server-side CDP capture of the matching tab. |
 | `{ type: "vision", requestId, payload: { image, prompt, model? } }` | Analyze `image` (base64 or data URL) with an Ollama Cloud vision model. |
 | `{ type: "ping" }` | Liveness ping. |
@@ -39,6 +43,8 @@ and is mirrored in `extension/src/sidepanel/types.ts` — keep both in sync.
 | `connected` | Session established; `resumed` flags whether history survived. |
 | `response` + `requestId` | Request ack/completion (e.g. `{ accepted: true }`). |
 | `history` | Replayed conversation after a resume: `{ messages: [{ id, role, text }] }` (user/assistant text only, last 100). |
+| `server_settings` + `requestId` | Live model state: `{ visionModel, interactionModel?, activeModel? }`. Sent in reply to `get_server_settings`, `set_interaction_model`, `set_vision_model`. |
+| `models` + `requestId` | Live lists: `{ interaction: [{ provider, modelId, name? }], vision: [string] }` — nothing hardcoded. |
 | `assistant_token` | Streaming assistant text: `delta` (increment) and `text` (cumulative). |
 | `thinking_token` | Streaming reasoning text (increment only). |
 | `tool_call` | Tool activity: `{ id, name, args, status: running|completed|failed }`. Emitted on both `toolcall_end` (planned call) and `tool_execution_start/end`. |

@@ -5,6 +5,7 @@
 import type { ServerConfig } from "../config";
 import { listTargets } from "../browser/cdp";
 import { analyzeScreenshot, listVisionModels } from "../vision/ollama-vision";
+import { loadSettings } from "../settings";
 
 const CORS_HEADERS: Record<string, string> = {
 	"Access-Control-Allow-Origin": "*",
@@ -30,7 +31,7 @@ export async function handleApi(request: Request, path: string, config: ServerCo
 			status: "ok",
 			sessions: sessionIds().length,
 			cdp: config.cdpUrl,
-			visionModel: config.visionModel,
+			visionModel: loadSettings().visionModel ?? config.visionModel,
 		});
 	}
 
@@ -63,7 +64,9 @@ export async function handleApi(request: Request, path: string, config: ServerCo
 		try {
 			const body = (await request.json()) as { image?: string; prompt?: string; model?: string };
 			if (!body.image || !body.prompt) return json({ error: "image and prompt required" }, 400);
-			const result = await analyzeScreenshot(config, body.image, body.prompt, body.model);
+			const visionModel = body.model ?? loadSettings().visionModel ?? config.visionModel;
+			if (!visionModel) return json({ error: "No vision model configured" }, 400);
+			const result = await analyzeScreenshot(visionModel, body.image, body.prompt);
 			return json(result);
 		} catch (error) {
 			return json({ error: error instanceof Error ? error.message : String(error) }, 500);

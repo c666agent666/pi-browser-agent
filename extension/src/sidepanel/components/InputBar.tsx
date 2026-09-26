@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { colors, font } from "../theme";
+import { useTheme } from "../ThemeContext";
+import { font } from "../themes";
 
 export function InputBar({
   onSend,
@@ -8,6 +9,7 @@ export function InputBar({
   onSend: (text: string) => Promise<void>;
   disabled: boolean;
 }) {
+  const t = useTheme();
   const [text, setText] = useState("");
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -51,9 +53,14 @@ export function InputBar({
   };
 
   return (
-    <div style={styles.wrapper}>
-      <div style={styles.row}>
-        <span style={styles.promptMarker}>λ</span>
+    <div style={{ borderTop: `1px solid ${t.borderBright}`, background: t.bgPanel, padding: "8px 10px 4px" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 8, position: "relative" }}>
+        <span
+          style={{ color: t.green, fontWeight: 700, paddingTop: 4, textShadow: `0 0 6px ${t.greenFaint}` }}
+          title="Your input — everything you type here goes to the agent"
+        >
+          λ
+        </span>
         <textarea
           ref={textareaRef}
           value={text}
@@ -67,44 +74,30 @@ export function InputBar({
           disabled={disabled}
           spellCheck={false}
           autoFocus
-          style={styles.textarea}
           rows={1}
+          style={{
+            flex: 1,
+            background: "transparent",
+            border: "none",
+            outline: "none",
+            color: t.white,
+            fontFamily: font.mono,
+            fontSize: font.size,
+            lineHeight: 1.5,
+            resize: "none",
+            padding: "3px 0",
+            caretColor: t.green,
+          }}
         />
-        {text === "" && !disabled && <span className="pi-cursor" style={styles.cursor}>▊</span>}
+        {text === "" && !disabled && (
+          <span className="pi-cursor" style={{ position: "absolute", left: 18, top: 5, fontSize: font.size }}>
+            ▊
+          </span>
+        )}
       </div>
-      <div style={styles.hints}>
-        <span>enter send · shift+enter newline · ↑ history</span>
+      <div style={{ color: t.faint, fontSize: font.sizeTiny, textAlign: "right", marginTop: 2 }}>
+        enter send · shift+enter newline · ↑ history
       </div>
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  wrapper: {
-    borderTop: `1px solid ${colors.borderBright}`,
-    background: colors.bgPanel,
-    padding: "8px 10px 4px",
-  },
-  row: { display: "flex", alignItems: "flex-start", gap: 8, position: "relative" },
-  promptMarker: {
-    color: colors.green,
-    fontWeight: 700,
-    paddingTop: 4,
-    textShadow: `0 0 6px ${colors.greenFaint}`,
-  },
-  textarea: {
-    flex: 1,
-    background: "transparent",
-    border: "none",
-    outline: "none",
-    color: colors.white,
-    fontFamily: font.mono,
-    fontSize: font.size,
-    lineHeight: 1.5,
-    resize: "none",
-    padding: "3px 0",
-    caretColor: colors.green,
-  },
-  cursor: { position: "absolute", left: 18, top: 5, fontSize: font.size },
-  hints: { color: colors.faint, fontSize: font.sizeTiny, textAlign: "right", marginTop: 2 },
-};

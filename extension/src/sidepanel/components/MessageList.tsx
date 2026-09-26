@@ -1,7 +1,8 @@
 import React from "react";
 import type { Message } from "../types";
 import { ToolCallCard } from "./ToolCallCard";
-import { colors, font } from "../theme";
+import { useTheme } from "../ThemeContext";
+import { font } from "../themes";
 
 export function MessageList({
   messages,
@@ -10,30 +11,36 @@ export function MessageList({
   messages: Message[];
   streaming: boolean;
 }) {
+  const t = useTheme();
+
   if (messages.length === 0) {
     return (
-      <div style={styles.banner}>
-        <div style={styles.bannerTitle}>pi-browser-agent</div>
-        <div style={styles.bannerLine}>
-          <span style={{ color: colors.green }}>❯</span> agent ready — type a task below
+      <div style={{ padding: "16px 4px", lineHeight: 1.7 }}>
+        <div style={{ color: t.green, fontWeight: 700, marginBottom: 8, textShadow: `0 0 6px ${t.greenFaint}` }}>
+          pi-browser-agent
         </div>
-        <div style={styles.bannerHint}>
+        <div style={{ color: t.white, marginBottom: 8 }}>
+          <span style={{ color: t.green }}>❯</span> agent ready — type a task below
+        </div>
+        <div style={{ color: t.dim, marginBottom: 12, fontSize: font.sizeSmall }}>
           the agent can read and control this browser: open pages, click,
           type, fill forms. it sees your logins because it drives your
           real browser.
         </div>
-        <div style={styles.bannerKeys}>toolbar:</div>
-        <div style={styles.bannerKeyRow}>
-          <span style={styles.key}>[page info]</span> what the agent can see on this page
+        <div style={{ color: t.faint, textTransform: "uppercase", fontSize: font.sizeTiny, marginBottom: 4 }}>
+          toolbar:
         </div>
-        <div style={styles.bannerKeyRow}>
-          <span style={styles.key}>[screenshot]</span> capture + vision-analyze the page
+        <div style={{ color: t.dim, fontSize: font.sizeSmall }}>
+          <span style={{ color: t.green }}>[page info]</span> what the agent can see on this page
         </div>
-        <div style={styles.bannerKeyRow}>
-          <span style={styles.key}>[auto-attach]</span> include page info with every message
+        <div style={{ color: t.dim, fontSize: font.sizeSmall }}>
+          <span style={{ color: t.green }}>[auto-attach]</span> include page info with every message
         </div>
-        <div style={styles.bannerKeyRow}>
-          <span style={styles.key}>[new chat]</span> start over (asks to confirm)
+        <div style={{ color: t.dim, fontSize: font.sizeSmall }}>
+          <span style={{ color: t.green }}>[new chat]</span> start over (asks to confirm)
+        </div>
+        <div style={{ color: t.dim, fontSize: font.sizeSmall }}>
+          <span style={{ color: t.green }}>[settings]</span> models, screenshots on/off, colors & themes
         </div>
       </div>
     );
@@ -42,21 +49,28 @@ export function MessageList({
   return (
     <div style={styles.list}>
       {messages.map((msg, index) => (
-        <LogLine
+        <div
           key={msg.id}
-          message={msg}
-          live={streaming && index === messages.length - 1}
-        />
+          style={{
+            padding: "4px 6px",
+            borderRadius: 2,
+            background: index % 2 === 1 ? t.zebra : "transparent",
+          }}
+        >
+          <LogLine message={msg} live={streaming && index === messages.length - 1} />
+        </div>
       ))}
     </div>
   );
 }
 
 function LogLine({ message, live }: { message: Message; live: boolean }) {
+  const t = useTheme();
+
   if (message.role === "system") {
     return (
-      <div style={styles.systemLine}>
-        <span style={{ color: colors.yellow }}>!</span> {message.content}
+      <div style={{ color: t.dim, padding: "2px 0", whiteSpace: "pre-wrap", fontSize: font.sizeSmall }}>
+        <span style={{ color: t.yellow }}>!</span> {message.content}
       </div>
     );
   }
@@ -64,8 +78,10 @@ function LogLine({ message, live }: { message: Message; live: boolean }) {
   if (message.role === "user") {
     return (
       <div style={styles.userLine}>
-        <span style={{ ...styles.prompt, color: colors.green }}>λ</span>
-        <span style={styles.userText}>{message.content}</span>
+        <span style={{ ...styles.prompt, color: t.green, textShadow: `0 0 6px ${t.greenFaint}` }}>λ</span>
+        <span style={{ color: t.white, whiteSpace: "pre-wrap", wordBreak: "break-word", flex: 1 }}>
+          {message.content}
+        </span>
       </div>
     );
   }
@@ -75,10 +91,10 @@ function LogLine({ message, live }: { message: Message; live: boolean }) {
   if (empty) return null;
 
   return (
-    <div style={styles.assistantBlock}>
+    <div style={{ ...styles.assistantBlock, borderLeft: `2px solid ${t.greenDim}` }}>
       {message.thinking && <ThinkingBlock thinking={message.thinking} live={live} />}
       {message.content && (
-        <div style={styles.assistantText}>
+        <div style={{ color: t.green, whiteSpace: "pre-wrap", wordBreak: "break-word", lineHeight: 1.55 }}>
           {message.content}
           {live && <span className="pi-cursor">▊</span>}
         </div>
@@ -97,20 +113,42 @@ function LogLine({ message, live }: { message: Message; live: boolean }) {
  * expand the full reasoning.
  */
 function ThinkingBlock({ thinking, live }: { thinking: string; live: boolean }) {
+  const t = useTheme();
   const preview = lastNonEmptyLine(thinking).slice(-80);
   return (
-    <details style={styles.thinking}>
-      <summary style={styles.thinkingSummary} title="The model's private reasoning before it answers. Click to read all of it.">
-        <span style={{ color: live ? colors.green : colors.greenDim }}>
+    <details>
+      <summary
+        style={{
+          ...styles.thinkingSummary,
+          color: t.dim,
+          fontSize: font.sizeSmall,
+        }}
+        title="The model's private reasoning before it answers. Click to read all of it."
+      >
+        <span style={{ color: live ? t.green : t.greenDim }}>
           {live ? "◆ thinking" : "◇ thinking"}
         </span>
-        <span style={styles.thinkingPreview}>
+        <span style={{ color: t.dim, flex: 1, overflow: "hidden", textOverflow: "ellipsis", fontStyle: "italic" }}>
           {live && <span className="pi-cursor" style={{ fontSize: font.sizeSmall }}>▊ </span>}
           {preview}
         </span>
-        <span style={styles.thinkingMeta}>{formatChars(thinking.length)}</span>
+        <span style={{ color: t.faint, fontSize: font.sizeTiny }}>{formatChars(thinking.length)}</span>
       </summary>
-      <div style={styles.thinkingText}>{thinking}</div>
+      <div
+        style={{
+          color: t.faint,
+          whiteSpace: "pre-wrap",
+          marginTop: 4,
+          marginBottom: 4,
+          fontSize: font.sizeSmall,
+          borderLeft: `1px solid ${t.border}`,
+          paddingLeft: 8,
+          maxHeight: 200,
+          overflow: "auto",
+        }}
+      >
+        {thinking}
+      </div>
     </details>
   );
 }
@@ -125,54 +163,17 @@ function formatChars(count: number): string {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  list: { display: "flex", flexDirection: "column", gap: 10 },
-  banner: { padding: "16px 4px", color: colors.dim, lineHeight: 1.7 },
-  bannerTitle: {
-    color: colors.green,
-    fontWeight: 700,
-    marginBottom: 8,
-    textShadow: `0 0 6px ${colors.greenFaint}`,
-  },
-  bannerLine: { color: colors.white, marginBottom: 8 },
-  bannerHint: { color: colors.dim, marginBottom: 12 },
-  bannerKeys: { color: colors.faint, textTransform: "uppercase", fontSize: font.sizeTiny, marginBottom: 4 },
-  bannerKeyRow: { color: colors.dim, fontSize: font.sizeSmall },
-  key: { color: colors.green },
+  list: { display: "flex", flexDirection: "column" },
   userLine: { display: "flex", gap: 8, alignItems: "flex-start" },
-  prompt: { fontWeight: 700, textShadow: `0 0 6px ${colors.greenFaint}` },
-  userText: { color: colors.white, whiteSpace: "pre-wrap", wordBreak: "break-word", flex: 1 },
-  assistantBlock: {
-    borderLeft: `2px solid ${colors.greenDim}`,
-    paddingLeft: 10,
-    display: "flex",
-    flexDirection: "column",
-    gap: 6,
-  },
-  assistantText: { color: colors.green, whiteSpace: "pre-wrap", wordBreak: "break-word", lineHeight: 1.55 },
-  thinking: {},
+  prompt: { fontWeight: 700 },
+  assistantBlock: { paddingLeft: 10, display: "flex", flexDirection: "column", gap: 6 },
   thinkingSummary: {
-    color: colors.dim,
     cursor: "pointer",
     listStyle: "none",
     display: "flex",
     alignItems: "baseline",
     gap: 8,
-    fontSize: font.sizeSmall,
     whiteSpace: "nowrap",
     overflow: "hidden",
   },
-  thinkingPreview: { color: colors.dim, flex: 1, overflow: "hidden", textOverflow: "ellipsis", fontStyle: "italic" },
-  thinkingMeta: { color: colors.faint, fontSize: font.sizeTiny },
-  thinkingText: {
-    color: colors.faint,
-    whiteSpace: "pre-wrap",
-    marginTop: 4,
-    marginBottom: 4,
-    fontSize: font.sizeSmall,
-    borderLeft: `1px solid ${colors.border}`,
-    paddingLeft: 8,
-    maxHeight: 200,
-    overflow: "auto",
-  },
-  systemLine: { color: colors.dim, padding: "2px 0", whiteSpace: "pre-wrap" },
 };

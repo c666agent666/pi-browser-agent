@@ -7,7 +7,16 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import type { ClientMessage, Message, PageContextSummary, ServerMessage, ToolCall } from "../types";
+import type {
+  ClientMessage,
+  Message,
+  ModelRef,
+  ModelsListState,
+  PageContextSummary,
+  ServerMessage,
+  ServerSettingsState,
+  ToolCall,
+} from "../types";
 
 const WS_URL = "ws://127.0.0.1:3848/ws";
 const STORAGE_KEY = "pi-agent-session-id";
@@ -23,11 +32,17 @@ export interface PiAgentApi {
   sessionId: string | null;
   streaming: boolean;
   messages: Message[];
+  serverSettings: ServerSettingsState | null;
+  modelsList: ModelsListState | null;
   sendMessage: (text: string, context?: PageContextSummary) => Promise<void>;
   abort: () => Promise<void>;
   newSession: () => Promise<void>;
   requestScreenshot: (url?: string) => Promise<void>;
   requestVision: (image: string, prompt: string, model?: string) => Promise<string>;
+  refreshServerSettings: () => Promise<void>;
+  refreshModels: () => Promise<void>;
+  setInteractionModel: (provider: string, modelId: string) => Promise<void>;
+  setVisionModel: (model: string) => Promise<void>;
   clearMessages: () => void;
 }
 
@@ -35,6 +50,9 @@ export function usePiAgent(): PiAgentApi {
   const [connected, setConnected] = useState(false);
   const [streaming, setStreaming] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [serverSettings, setServerSettings] = useState<ServerSettingsState | null>(null);
+  const [modelsList, setModelsList] = useState<ModelsListState | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const sessionIdRef = useRef<string | null>(null);
@@ -107,11 +125,37 @@ export function usePiAgent(): PiAgentApi {
       case "connected": {
         sessionIdRef.current = frame.payload.sessionId;
         localStorage.setItem(STORAGE_KEY, frame.payload.sessionId);
+        setSessionId(frame.payload.sessionId);
         setConnected(true);
         if (!frame.payload.resumed) {
           // Fresh conversation — no session file to replay.
           setMessages([]);
         }
+        // Pull live model state from the server.
+        void send({ type: "get_server_settings", requestId: `req_${nextRequestIdRef.current++}` });
+        void send({ type: "get_models", requestId: `req_${nextRequestIdRef.current++}` });
+        break;
+      }
+
+      case "server_settings": {
+        const pending = pendingRef.current.get(frame.requestId);
+        if (pending) {
+          clearTimeout(pending.timeout);
+          pendingRef.current.delete(frame.requestId);
+          pending.resolve(frame.payload);
+        }
+        setServerSettings(frame.payload);
+        break;
+      }
+
+      case "models": {
+        const pending = pendingRef.current.get(frame.requestId);
+        if (pending) {
+          clearTimeout(pending.timeout);
+          pendingRef.current.delete(frame.requestId);
+          pending.resolve(frame.payload);
+        }
+        setModelsList(frame.payload);
         break;
       }
 
@@ -294,6 +338,33 @@ export function usePiAgent(): PiAgentApi {
     return result.analysis;
   }, [send]);
 
+  const refreshServerSettings = useCallback(async () => {
+    await send({ type: "get_server_settings", requestId: `req_${nextRequestIdRef.current++}` });
+  }, [send]);
+
+  const refreshModels = useCallback(async () => {
+    await send({ type: "get_models", requestId: `req_${nextRequestIdRef.current++}` });
+  }, [send]);
+
+  const setInteractionModel = useCallback(
+    async (provider: string, modelId: string) => {
+      await send({
+        type: "set_interaction_model",
+        requestId: `req_${nextRequestIdRef.current++}`,
+        payload: { provider, modelId },
+      });
+    },
+    [send],
+  );
+
+  const setVisionModel = useCallback(async (model: string) => {
+    await send({
+      type: "set_vision_model",
+      requestId: `req_${nextRequestIdRef.current++}`,
+      payload: { model },
+    });
+  }, [send]);
+
   const clearMessages = useCallback(() => {
     setMessages([]);
     activeAssistantIdRef.current = null;
@@ -301,14 +372,20 @@ export function usePiAgent(): PiAgentApi {
 
   return {
     connected,
-    sessionId: sessionIdRef.current,
+    sessionId,
     streaming,
     messages,
+    serverSettings,
+    modelsList,
     sendMessage,
     abort,
     newSession,
     requestScreenshot,
     requestVision,
+    refreshServerSettings,
+    refreshModels,
+    setInteractionModel,
+    setVisionModel,
     clearMessages,
   };
 }

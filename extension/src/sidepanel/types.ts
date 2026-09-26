@@ -47,9 +47,30 @@ export type ClientMessage =
   | { type: "get_state"; requestId: string }
   | { type: "screenshot"; requestId: string; payload: { url?: string } }
   | { type: "vision"; requestId: string; payload: { image: string; prompt: string; model?: string } }
+  | { type: "get_server_settings"; requestId: string }
+  | { type: "get_models"; requestId: string }
+  | { type: "set_interaction_model"; requestId: string; payload: { provider: string; modelId: string } }
+  | { type: "set_vision_model"; requestId: string; payload: { model: string } }
   | { type: "ping" };
 
 // ─── Server → Client ──────────────────────────────────────────────────────
+
+export interface ModelRef {
+  provider: string;
+  modelId: string;
+  name?: string;
+}
+
+export interface ServerSettingsState {
+  visionModel: string;
+  interactionModel?: ModelRef | null;
+  activeModel?: ModelRef | null;
+}
+
+export interface ModelsListState {
+  interaction: ModelRef[];
+  vision: string[];
+}
 
 export type ServerMessage =
   | { type: "connected"; payload: { sessionId: string; resumed: boolean; model?: string } }
@@ -61,6 +82,8 @@ export type ServerMessage =
   | { type: "tool_result"; payload: { id: string; name: string; result: unknown; isError: boolean } }
   | { type: "turn_end"; payload: { messageId: string } }
   | { type: "history"; payload: { messages: Array<{ id: string; role: "user" | "assistant"; text: string }> } }
+  | { type: "server_settings"; requestId: string; payload: ServerSettingsState }
+  | { type: "models"; requestId: string; payload: ModelsListState }
   | { type: "screenshot_result"; requestId: string; payload: Screenshot }
   | { type: "vision_result"; requestId: string; payload: { analysis: string; model: string } }
   | { type: "pong" };

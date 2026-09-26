@@ -19,6 +19,9 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for design decisions and [PROTOCOL.md](PR
 ## Features
 
 - 🖥 **Terminal UI** — dark background, green/white monospace, blinking cursor, command history (↑), CRT scanlines
+- 💻 **Theme system** — 5 presets (nebula [default, user palette #020224/#5c035c/#025a70/#190224 with green text], terminal green, matrix, amber console, midnight ocean) + a **color wheel** for every color slot. Zebra-striped log lines. Never white.
+- 🔧 **Model settings** — pick the interaction model AND the vision model separately from LIVE lists (139 pi models, 8 vision-capable verified); free-text entry for models not listed yet; "browse all models on ollama.com" opens the live catalog in a new tab. Nothing is hardcoded — new models work the day they appear.
+- 📷 **Screenshots are optional** — toggle them off entirely (status bar shows `cam:off`); the agent reads the page's HTML/CSS/JS directly, which is usually enough.
 - 💬 **Chat with pi** — full agent capabilities (tools, MCP, skills) in the side panel
 - 🌐 **Browser control** — type a task, the agent drives this browser (open pages, click, type, read) over CDP
 - 🔁 **Session resume** — reconnect and even **restart the server**; the conversation continues from pi's session files, with full history replay

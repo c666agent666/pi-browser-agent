@@ -6,7 +6,8 @@
 import type { ServerConfig } from "../config";
 import type { SessionManager } from "../agent/session-manager";
 import { captureScreenshot } from "../browser/cdp";
-import { analyzeScreenshot } from "../vision/ollama-vision";
+import { analyzeScreenshot, listVisionModels, modelHasVision } from "../vision/ollama-vision";
+import { loadSettings, saveSettings } from "../settings";
 import type { ClientMessage, ServerMessage } from "../types";
 
 export interface WsSessionContext {
@@ -32,6 +33,15 @@ function formatContextPrompt(context: {
 	if (context.selection?.trim()) parts.push(`User selection:\n${context.selection.trim()}`);
 	if (context.domSnapshot?.trim()) parts.push(`DOM snapshot (truncated):\n${context.domSnapshot.trim()}`);
 	return parts.join("\n");
+}
+
+/** Extract a { provider, modelId } summary from pi's Model object (defensively). */
+function modelRef(model: unknown): { provider: string; modelId: string } | null {
+	if (typeof model !== "object" || model === null) return null;
+	const provider = (model as { provider?: unknown }).provider;
+	const modelId = (model as { id?: unknown }).id ?? (model as { modelId?: unknown }).modelId;
+	if (typeof modelId !== "string") return null;
+	return { provider: typeof provider === "string" ? provider : "", modelId };
 }
 
 export async function handleClientMessage(
@@ -165,11 +175,158 @@ export async function handleClientMessage(
 		case "vision": {
 			try {
 				const { image, prompt, model } = message.payload;
-				const result = await analyzeScreenshot(config, image, prompt, model);
+				const visionModel = model ?? loadSettings().visionModel ?? config.visionModel;
+				if (!visionModel) {
+					throw new Error("No vision model configured — pick one in settings");
+				}
+				const result = await analyzeScreenshot(visionModel, image, prompt);
 				ctx.send({
 					type: "vision_result",
 					requestId: message.requestId,
 					payload: { analysis: result.analysis, model: result.model },
+				});
+			} catch (error) {
+				ctx.send({
+					type: "error",
+					requestId: message.requestId,
+					payload: { message: error instanceof Error ? error.message : String(error) },
+				});
+			}
+			return;
+		}
+
+		case "get_server_settings": {
+			try {
+				const settings = loadSettings();
+				let activeModel: { provider: string; modelId: string } | null = null;
+				try {
+					const state = await session.client.send("get_state");
+					if (state.success) activeModel = modelRef(state.data?.model);
+				} catch {}
+				ctx.send({
+					type: "server_settings",
+					requestId: message.requestId,
+					payload: {
+						visionModel: settings.visionModel ?? config.visionModel,
+						interactionModel: settings.interactionModel ?? null,
+						activeModel,
+					},
+				});
+			} catch (error) {
+				ctx.send({
+					type: "error",
+					requestId: message.requestId,
+					payload: { message: error instanceof Error ? error.message : String(error) },
+				});
+			}
+			return;
+		}
+
+		case "get_models": {
+			try {
+				const [piModels, vision] = await Promise.all([
+					session.client
+						.send("get_available_models")
+						.then(response => {
+							const models = (response.data?.models ?? []) as unknown[];
+							const mapped: Array<{ provider: string; modelId: string; name?: string } | null> = models.map(m => {
+								const ref = modelRef(m);
+								if (!ref) return null;
+								const name = (m as { name?: unknown }).name;
+								return {
+									provider: ref.provider,
+									modelId: ref.modelId,
+									name: typeof name === "string" ? name : undefined,
+								};
+							});
+							return mapped.filter((m): m is { provider: string; modelId: string; name?: string } => m !== null);
+						})
+						.catch(() => [] as Array<{ provider: string; modelId: string; name?: string }>),
+					listVisionModels(),
+				]);
+				ctx.send({
+					type: "models",
+					requestId: message.requestId,
+					payload: { interaction: piModels, vision },
+				});
+			} catch (error) {
+				ctx.send({
+					type: "error",
+					requestId: message.requestId,
+					payload: { message: error instanceof Error ? error.message : String(error) },
+				});
+			}
+			return;
+		}
+
+		case "set_interaction_model": {
+			const { provider, modelId } = message.payload;
+			try {
+				const response = await session.client.send("set_model", { provider, modelId });
+				if (!response.success) {
+					ctx.send({
+						type: "error",
+						requestId: message.requestId,
+						payload: { message: response.error ?? `pi rejected model ${provider}/${modelId}` },
+					});
+					return;
+				}
+				// Persist so future sessions spawn with this model.
+				const settings = loadSettings();
+				settings.interactionModel = { provider, modelId };
+				saveSettings(settings);
+
+				const active = modelRef(response.data);
+				ctx.send({
+					type: "server_settings",
+					requestId: message.requestId,
+					payload: {
+						visionModel: settings.visionModel ?? config.visionModel,
+						interactionModel: settings.interactionModel,
+						activeModel: active,
+					},
+				});
+			} catch (error) {
+				ctx.send({
+					type: "error",
+					requestId: message.requestId,
+					payload: { message: error instanceof Error ? error.message : String(error) },
+				});
+			}
+			return;
+		}
+
+		case "set_vision_model": {
+			const { model } = message.payload;
+			try {
+				if (!(await modelHasVision(model))) {
+					ctx.send({
+						type: "error",
+						requestId: message.requestId,
+						payload: {
+							message: `Model "${model}" has no vision capability — pick one from the vision list`,
+						},
+					});
+					return;
+				}
+				const settings = loadSettings();
+				settings.visionModel = model;
+				saveSettings(settings);
+
+				let activeModel: { provider: string; modelId: string } | null = null;
+				try {
+					const state = await session.client.send("get_state");
+					if (state.success) activeModel = modelRef(state.data?.model);
+				} catch {}
+
+				ctx.send({
+					type: "server_settings",
+					requestId: message.requestId,
+					payload: {
+						visionModel: model,
+						interactionModel: settings.interactionModel ?? null,
+						activeModel,
+					},
 				});
 			} catch (error) {
 				ctx.send({
