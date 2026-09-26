@@ -4,6 +4,7 @@ import { InputBar } from "./components/InputBar";
 import { PageContextPanel } from "./components/PageContextPanel";
 import { ScreenshotViewer } from "./components/ScreenshotViewer";
 import { SettingsPanel } from "./components/SettingsPanel";
+import { HistoryPanel } from "./components/HistoryPanel";
 import { usePiAgent } from "./hooks/usePiAgent";
 import { usePageContext } from "./hooks/usePageContext";
 import { useSettings, useTheme } from "./ThemeContext";
@@ -23,21 +24,26 @@ export function App() {
     messages,
     serverSettings,
     modelsList,
+    conversations,
     sendMessage,
     abort,
     newSession,
     requestScreenshot,
     requestVision,
+    refreshConversations,
     setInteractionModel,
     setVisionModel,
     refreshModels,
     testModel,
+    switchToConversation,
+    deleteConversation,
   } = usePiAgent();
 
   const { context, refresh, captureScreenshot } = usePageContext();
 
   const [showContext, setShowContext] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const [screenshot, setScreenshot] = useState<Screenshot | null>(null);
   const [visionPrompt, setVisionPrompt] = useState("");
   const [visionResult, setVisionResult] = useState<string | null>(null);
@@ -84,8 +90,13 @@ export function App() {
     }
     clearTimeout(confirmTimerRef.current);
     setConfirmNew(false);
-    void newSession();
+    newSession(); // old conversation stays in history — switch to a fresh one
   }, [confirmNew, newSession]);
+
+  // Refresh the conversation list when the history panel opens.
+  useEffect(() => {
+    if (showHistory) void refreshConversations();
+  }, [showHistory, refreshConversations]);
 
   // Auto-scroll the terminal log.
   useEffect(() => {
@@ -210,11 +221,30 @@ export function App() {
           title={confirmNew ? "Click again to erase this conversation and start fresh." : "Start a NEW conversation. The current one is erased (click twice to confirm)."}
         />
         <TermButton
+          onClick={() => setShowHistory(v => !v)}
+          active={showHistory}
+          label="history"
+          title="All past conversations — continue any task. New chat never erases them; delete needs a confirming second click."
+        />
+        <TermButton
           onClick={() => setShowSettings(true)}
           label="settings"
           title="Change models (interaction + vision), turn screenshots off/on, and pick colors & themes."
         />
       </div>
+
+      {showHistory && (
+        <HistoryPanel
+          conversations={conversations}
+          activeSessionId={sessionId}
+          onClose={() => setShowHistory(false)}
+          onSwitch={id => {
+            switchToConversation(id);
+            setShowHistory(false);
+          }}
+          onDelete={deleteConversation}
+        />
+      )}
 
       {showContext && <PageContextPanel context={context} onClose={() => setShowContext(false)} />}
 

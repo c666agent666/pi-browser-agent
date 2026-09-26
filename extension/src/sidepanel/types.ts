@@ -52,6 +52,8 @@ export type ClientMessage =
   | { type: "set_interaction_model"; requestId: string; payload: { provider: string; modelId: string } }
   | { type: "set_vision_model"; requestId: string; payload: { model: string } }
   | { type: "test_model"; requestId: string; payload: { model: string } }
+  | { type: "list_conversations"; requestId: string }
+  | { type: "delete_conversation"; requestId: string; payload: { conversationId: string } }
   | { type: "ping" };
 
 // ─── Server → Client ──────────────────────────────────────────────────────
@@ -80,6 +82,13 @@ export interface TestModelResult {
   liveTest: { ok: boolean; reply: string; latencyMs: number; error?: string };
 }
 
+export interface ConversationMeta {
+  id: string;
+  title: string;
+  createdAt: number;
+  lastActiveAt: number;
+}
+
 export type ServerMessage =
   | { type: "connected"; payload: { sessionId: string; resumed: boolean; model?: string } }
   | { type: "response"; requestId: string; payload: Record<string, unknown> }
@@ -93,6 +102,7 @@ export type ServerMessage =
   | { type: "server_settings"; requestId: string; payload: ServerSettingsState }
   | { type: "models"; requestId: string; payload: ModelsListState }
   | { type: "test_model_result"; requestId: string; payload: TestModelResult }
+  | { type: "conversations"; requestId: string; payload: { conversations: ConversationMeta[] } }
   | { type: "screenshot_result"; requestId: string; payload: Screenshot }
   | { type: "vision_result"; requestId: string; payload: { analysis: string; model: string } }
   | { type: "pong" };

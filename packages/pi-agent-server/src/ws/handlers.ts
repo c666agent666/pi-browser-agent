@@ -8,6 +8,7 @@ import type { SessionManager } from "../agent/session-manager";
 import { captureScreenshot } from "../browser/cdp";
 import { analyzeScreenshot, listVisionModels, modelHasVision, probeModel } from "../vision/ollama-vision";
 import { loadSettings, saveSettings } from "../settings";
+import { listConversations, deleteConversation, setConversationTitle } from "../agent/session-store";
 import type { ClientMessage, ServerMessage } from "../types";
 
 export interface WsSessionContext {
@@ -71,6 +72,10 @@ export async function handleClientMessage(
 
 			// Prepend page context (if provided) to the user prompt.
 			let prompt = context ? `<page-context>\n${formatContextPrompt(context)}\n</page-context>\n\n${text}` : text;
+
+			// First user message of this conversation becomes its title in the
+		// history registry (set only once; no-op when the entry is absent).
+			setConversationTitle(ctx.sessionId, text.replace(/\s+/g, " ").trim());
 
 			// Auto-learn nudge, once per session: pi's standing autolearn guidance
 			// already points at manage_skill; this makes the agent actively capture
@@ -345,6 +350,29 @@ export async function handleClientMessage(
 					payload: { message: error instanceof Error ? error.message : String(error) },
 				});
 			}
+			return;
+		}
+
+		case "list_conversations": {
+			ctx.send({
+				type: "conversations",
+				requestId: message.requestId,
+				payload: { conversations: listConversations() },
+			});
+			return;
+		}
+
+		case "delete_conversation": {
+			const { conversationId } = message.payload;
+			const deleted = deleteConversation(conversationId);
+			// If the active conversation was deleted, kill its subprocess too —
+			// the client will switch to a fresh one.
+			if (conversationId === ctx.sessionId) manager.destroySession(conversationId);
+			ctx.send({
+				type: "response",
+				requestId: message.requestId,
+				payload: { deleted },
+			});
 			return;
 		}
 

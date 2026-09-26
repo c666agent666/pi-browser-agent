@@ -5,7 +5,7 @@
  */
 
 import { PiRpcClient, type PiEvent } from "./pi-rpc-client";
-import { getSessionFile, setSessionFile } from "./session-store";
+import { getSessionFile, setSessionFile, listConversations, deleteConversation } from "./session-store";
 import { createEventBridge, messageText } from "./event-bridge";
 import { loadSettings } from "../settings";
 import type { ServerConfig } from "../config";
@@ -173,6 +173,11 @@ export class SessionManager {
 			}
 		}, this.config.idleTimeoutMs);
 		this.#idleTimers.set(sessionId, timer);
+	}
+
+	/** Destroy a session's subprocess immediately (used when its conversation is deleted). */
+	destroySession(sessionId: string): void {
+		this.#destroy(sessionId);
 	}
 
 	async closeAll(): Promise<void> {

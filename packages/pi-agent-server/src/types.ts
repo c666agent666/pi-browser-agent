@@ -82,6 +82,19 @@ export interface TestModelRequest {
 	payload: { model: string };
 }
 
+/** List all stored conversations for the history panel. */
+export interface ListConversationsRequest {
+	type: "list_conversations";
+	requestId: string;
+}
+
+/** Permanently delete a conversation (registry entry + pi session file). */
+export interface DeleteConversationRequest {
+	type: "delete_conversation";
+	requestId: string;
+	payload: { conversationId: string };
+}
+
 export interface TestModelResult {
 	model: string;
 	exists: boolean;
@@ -107,6 +120,8 @@ export type ClientMessage =
 	| SetInteractionModelRequest
 	| SetVisionModelRequest
 	| TestModelRequest
+	| ListConversationsRequest
+	| DeleteConversationRequest
 	| PingRequest;
 
 // ─── Server → Client ──────────────────────────────────────────────────────
@@ -212,6 +227,13 @@ export interface TestModelResultFrame {
 	payload: TestModelResult;
 }
 
+/** All conversations, newest first (answer to list_conversations). */
+export interface ConversationsFrame {
+	type: "conversations";
+	requestId: string;
+	payload: { conversations: Array<{ id: string; title: string; createdAt: number; lastActiveAt: number }> };
+}
+
 export interface HistoryFrame {
 	type: "history";
 	payload: { messages: Array<{ id: string; role: "user" | "assistant"; text: string }> };
@@ -233,7 +255,8 @@ export type ServerMessage =
 	| HistoryFrame
 	| ServerSettingsFrame
 	| ModelsFrame
-	| TestModelResultFrame;
+	| TestModelResultFrame
+	| ConversationsFrame;
 
 // ─── Shared payloads ───────────────────────────────────────────────────────
 
